@@ -36,10 +36,11 @@ func exists(path string) (bool, error) {
 }
 
 func saveFile(fpath string, content []byte) error {
-	var dir = filepath.Base(fpath)
+	var dir = filepath.Dir(fpath)
 
 	// If the directory doesn't exist we create it.
 	if ok, err := exists(dir); !ok && err == nil {
+		log.Println("saveFile", "creating directory with path", dir)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			log.Println("saveFile", err)
 			return err
@@ -75,6 +76,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 	var savedFiles []string
 	var ok = true
 
@@ -97,7 +99,9 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			fdir := strings.TrimPrefix(r.URL.Path, "/put/")
 			fpath := filepath.Join(cfg.BaseDir, fdir, fname)
 			log.Println("handlePut", "saving file with path", fpath)
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				if err := saveFile(fpath, cnt); err != nil {
 					ok = false
 					log.Println("handlePut", "error saving file", err)
@@ -108,6 +112,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 		}
+		wg.Wait()
 
 		res := PutResponse{Base: Base{OK: ok}, Files: savedFiles}
 		b, err := json.Marshal(res)
@@ -116,6 +121,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, errorf(err.Error()))
 			return
 		}
+		fmt.Println(savedFiles)
 		fmt.Fprintln(w, string(b))
 	}
 }
