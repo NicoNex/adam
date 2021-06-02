@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -19,7 +20,7 @@ func errorf(format string, a ...interface{}) string {
 	base := Base{false, fmt.Sprintf(format, a...)}
 	b, err := json.Marshal(base)
 	if err != nil {
-		log.Println("errorf", err)
+		log.Println("errorf", "json.Marshal", err)
 		return "internal server error, check logs for details"
 	}
 	return string(b)
@@ -42,16 +43,16 @@ func saveFile(fpath string, content []byte) error {
 	if ok, err := exists(dir); !ok && err == nil {
 		log.Println("saveFile", "creating directory with path", dir)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Println("saveFile", err)
+			log.Println("saveFile", "os.MkdirAll", err)
 			return err
 		}
 	} else if err != nil {
-		log.Println("saveFile", err)
+		log.Println("saveFile", "exists", err)
 		return err
 	}
 
 	if err := os.WriteFile(fpath, content, 0755); err != nil {
-		log.Println("saveFile", err)
+		log.Println("saveFile", "os.WriteFile", err)
 		return err
 	}
 	return nil
@@ -84,7 +85,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 		for _, h := range headers {
 			tmp, err := h.Open()
 			if err != nil {
-				log.Println("handlePut", err)
+				log.Println("handlePut", "h.Open", err)
 				continue
 			}
 
@@ -92,7 +93,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			cnt, err := io.ReadAll(tmp)
 			tmp.Close()
 			if err != nil {
-				log.Println("handlePut", err)
+				log.Println("handlePut", "io.ReadAll", err)
 				continue
 			}
 
@@ -104,7 +105,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 				defer wg.Done()
 				if err := saveFile(fpath, cnt); err != nil {
 					ok = false
-					log.Println("handlePut", "error saving file", err)
+					log.Println("handlePut", "saveFile", err)
 				} else {
 					mu.Lock()
 					savedFiles = append(savedFiles, fpath)
@@ -117,7 +118,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 		res := PutResponse{Base: Base{OK: ok}, Files: savedFiles}
 		b, err := json.Marshal(res)
 		if err != nil {
-			log.Println("handlePut", err)
+			log.Println("handlePut", "json.Marshal", err)
 			fmt.Fprintln(w, errorf(err.Error()))
 			return
 		}
@@ -131,7 +132,7 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 
 	ok, err := exists(path)
 	if err != nil {
-		log.Println("handleDel", err)
+		log.Println("handleDel", "exists", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
@@ -143,14 +144,14 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("handleDel", "deleting path", path)
 	if err := os.RemoveAll(path); err != nil {
-		log.Println("handleDel", err)
+		log.Println("handleDel", "os.RemoveAll", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
 
 	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
-		log.Println("handleDel", err)
+		log.Println("handleDel", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
@@ -158,11 +159,25 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	var port int
+	var basedir string
+
+	flag.IntVar(&port, "p", 0, "The port Adam will listen to.")
+	flag.StringVar(&basedir, "d", "", "The directory Adam will use as root directory.")
+	flag.Parse()
+
 	log.Println("adam is running...")
 
 	cfgpath := filepath.Join(Home, ".config", "adam.toml")
 	log.Println("read config file at", cfgpath)
 	cfg = parseConfig(cfgpath)
+
+	if port != 0 {
+		cfg.Port = fmt.Sprintf(":%d", port)
+	}
+	if basedir != "" {
+		cfg.BaseDir = basedir
+	}
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
