@@ -34,7 +34,7 @@ type Config struct {
 func parseConfig(path string) Config {
 	var c Config
 
-	if _, err := toml.Decode(path, &c); err != nil {
+	if _, err := toml.DecodeFile(path, &c); err != nil {
 		log.Println("parseConfig", err)
 	}
 	if !strings.HasPrefix(c.Port, ":") {
