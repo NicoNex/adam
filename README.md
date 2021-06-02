@@ -27,12 +27,13 @@ Run `adam --help` for additional details.
 
 
 ## Endpoints
+All endpoints support the GET HTTP method except for the `/put` one that needs the request to be POST.
 
 ### /
 This endpoint lets you browse the directory tree adam is exposing.
 
 ### /put
-This endpoint let's you upload one or multiple files to a path specified in the URL.
+This endpoint lets you upload one or multiple files to a path specified in the URL.
 Eg: 
 ```bash
 curl -F 'files[]=@file1.png' -F 'files[]=@file2.webm' 'http://localhost:8080/put/example/directory' 
@@ -56,7 +57,7 @@ If something went wrong with some of the files uploaded, the "ok" field will be 
 
 
 ### /del
-This endpoint let's you delete a file or a directory.
+This endpoint lets you delete a file or a directory.
 If successful you'll be presented with a response formed like this:
 ```json
 {
