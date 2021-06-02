@@ -55,6 +55,25 @@ Adam will respond with a json formed like this if successful:
 
 If something went wrong with some of the files uploaded, the "ok" field will be set to `false` and the "files" array will contain only the files that have been successfully saved.
 
+### /move
+This endpoint lets you move (and thus also rename) a file or directory from `source` to `dest`.
+Adam for this endpoint expects two query parameters called `source` and `dest`.
+- `source` is the original path of the file or directory to move or rename.
+- `dest` is the destination path of the file or directory to move or rename.
+
+The response for this endpoint is the same as the response from the `/del` endpoint.
+
+#### Move example:
+In this example we move the file `file2.png` from `example/directory/file2.png` to `example/file2.png`.
+```bash
+curl 'http://localhost:8080/move?source=example/directory/file2.png&dest=example/file2.png'
+```
+
+#### Rename example:
+In this example we rename the file `example/directory/file2.png` to `example/directory/picture2.png`.
+```bash
+curl 'http://localhost:8080/move?source=example/directory/file2.png&dest=example/directory/picture2.png'
+```
 
 ### /del
 This endpoint lets you delete a file or a directory.
@@ -65,7 +84,8 @@ If successful you'll be presented with a response formed like this:
 }
 ```
 
-Otherwise if not successful Adam will include the error description in the response:
+Otherwise if not successful Adam will include the error description in the response.
+Eg:
 ```json
 {
 	"ok": false,

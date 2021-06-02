@@ -25,6 +25,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +177,43 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(b))
 }
 
+func handleMove(w http.ResponseWriter, r *http.Request) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		log.Println("handleMove", "url.ParseQuery", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	source := values.Get("source")
+	if source == "" {
+		fmt.Fprintln(w, errorf("no source path provided"))
+		return
+	}
+	source = filepath.Join(cfg.BaseDir, source)
+
+	dest := values.Get("dest")
+	if dest == "" {
+		fmt.Fprintln(w, errorf("no dest path provided"))
+		return
+	}
+	dest = filepath.Join(cfg.BaseDir, dest)
+
+	if err := os.Rename(source, dest); err != nil {
+		log.Println("handleMove", "os.Rename", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	b, err := json.Marshal(Base{OK: true})
+	if err != nil {
+		log.Println("handleMove", "json.Marshal", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+	fmt.Fprintln(w, string(b))
+}
+
 func main() {
 	var port int
 	var basedir string
@@ -201,6 +239,7 @@ func main() {
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
 	http.HandleFunc("/put/", handlePut)
 	http.HandleFunc("/del/", handleDel)
+	http.HandleFunc("/move", handleMove)
 
 	log.Fatal(http.ListenAndServe(cfg.Port, nil))
 }
