@@ -25,11 +25,17 @@ type Base struct {
 
 type PutResponse struct {
 	Base
-	Files []string `json:"files,omitempty"`
+	Files  []File  `json:"files,omitempty"`
+	Errors []error `json:"errors,omitempty"`
 }
 
 type ChecksumResponse struct {
 	Base
 	File   string `json:"file"`
 	Sha256 string `json:"sha256sum"`
+}
+
+type File struct {
+	Path      string `json:"path"`
+	Sha256sum string `json:"sha256sum"`
 }

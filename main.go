@@ -82,32 +82,55 @@ func saveFile(fpath string, content []byte) error {
 	return nil
 }
 
-func saveSha256sum(fpath string) {
+func saveSha256sum(fpath string) (string, error) {
 	f, err := os.Open(fpath)
 	if err != nil {
 		log.Println("saveSha256sum", "os.Open", err)
-		return
+		return "", err
 	}
 	defer f.Close()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		log.Println("saveSha256sum", "io.Copy", err)
+		return "", err
 	}
 
 	encHex := hex.EncodeToString(h.Sum(nil))
 	if err := cc.Put([]byte(fpath), []byte(encHex)); err != nil {
 		log.Println("saveSha256sum", "cc.Put", err)
+		return "", err
 	}
+	return encHex, nil
 }
 
-func getSha256sum(fpath string) string {
+func getSha256sum(fpath string) (string, error) {
 	c, err := cc.Get([]byte(fpath))
 	if err != nil {
 		log.Println("getSha256sum", "cc.Get", err)
-		return ""
+		return "", err
 	}
-	return string(c)
+	return string(c), nil
+}
+
+func moveSha256sum(src, dest string) error {
+	var s = []byte(src)
+	var d = []byte(dest)
+
+	hash, err := cc.Get(s)
+	if err != nil {
+		log.Println("moveSha256sum", "cc.Get", err)
+		return err
+	}
+	if err := cc.Del(s); err != nil {
+		log.Println("moveSha256sum", "cc.Del", err)
+		return err
+	}
+	if err := cc.Put(d, hash); err != nil {
+		log.Println("moveSha256sum", "cc.Put", err)
+		return err
+	}
+	return nil
 }
 
 func handlePut(w http.ResponseWriter, r *http.Request) {
@@ -128,10 +151,12 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	var savedFiles []string
-	var ok = true
+	var (
+		wg         sync.WaitGroup
+		savedFiles FileList
+		errors     ErrList
+		ok         = true
+	)
 
 	for _, headers := range r.MultipartForm.File {
 		for _, h := range headers {
@@ -151,25 +176,29 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 
 			fdir := strings.TrimPrefix(r.URL.Path, "/put/")
 			fpath := filepath.Join(cfg.BaseDir, fdir, fname)
-			log.Println("handlePut", "saving file with path", fpath)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := saveFile(fpath, cnt); err != nil {
-					ok = false
-					log.Println("handlePut", "saveFile", err)
+				if err := saveFile(fpath, cnt); err == nil {
+					checksum, err := saveSha256sum(fpath)
+					if err != nil {
+						errors.Append(err)
+					}
+					savedFiles.Append(File{Path: filepath.Join(fdir, fname), Sha256sum: checksum})
 				} else {
-					go saveSha256sum(fpath)
-					mu.Lock()
-					savedFiles = append(savedFiles, filepath.Join(fdir, fname))
-					mu.Unlock()
+					ok = false
+					errors.Append(err)
+					log.Println("handlePut", "saveFile", err)
 				}
 			}()
 		}
 		wg.Wait()
 
-		res := PutResponse{Base: Base{OK: ok}, Files: savedFiles}
-		b, err := json.Marshal(res)
+		b, err := json.Marshal(PutResponse{
+			Base:   Base{OK: ok},
+			Files:  savedFiles.Slice(),
+			Errors: errors.Slice(),
+		})
 		if err != nil {
 			log.Println("handlePut", "json.Marshal", err)
 			fmt.Fprintln(w, errorf(err.Error()))
@@ -194,19 +223,19 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("handleDel", "deleting path", path)
 	if err := os.RemoveAll(path); err != nil {
 		log.Println("handleDel", "os.RemoveAll", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
-	go func() {
-		if err := cc.Del([]byte(path)); err != nil {
-			log.Println("handleDel", "cc.Del", err)
-		}
-	}()
 
-	b, err := json.Marshal(Base{OK: true})
+	response := Base{OK: true}
+	if err := cc.Del([]byte(path)); err != nil {
+		response.Error = err.Error()
+		log.Println("handleDel", "cc.Del", err)
+	}
+
+	b, err := json.Marshal(response)
 	if err != nil {
 		log.Println("handleDel", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
@@ -237,13 +266,31 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 	}
 	dest = filepath.Join(cfg.BaseDir, dest)
 
+	destDir := filepath.Dir(dest)
+	if ok, err := exists(destDir); !ok && err == nil {
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			log.Println("handleMove", "os.MkdirAll", err)
+			fmt.Fprintln(w, errorf(err.Error()))
+			return
+		}
+	} else if err != nil {
+		log.Println("handleMove", "os.MkdirAll", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
 	if err := os.Rename(source, dest); err != nil {
 		log.Println("handleMove", "os.Rename", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
 
-	b, err := json.Marshal(Base{OK: true})
+	res := Base{OK: true}
+	if err := moveSha256sum(source, dest); err != nil {
+		res.Error = err.Error()
+	}
+
+	b, err := json.Marshal(res)
 	if err != nil {
 		log.Println("handleMove", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
@@ -256,13 +303,17 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 	relative := strings.TrimPrefix(r.URL.Path, "/sha256sum/")
 	path := filepath.Join(cfg.BaseDir, relative)
 
-	c := getSha256sum(path)
-	if c == "" {
-		fmt.Fprintln(w, errorf("no sha256sum for path %s", relative))
+	c, err := getSha256sum(path)
+	if err != nil {
+		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
 
-	b, err := json.Marshal(ChecksumResponse{Base: Base{OK: true}, Sha256: c, File: relative})
+	b, err := json.Marshal(ChecksumResponse{
+		Base:   Base{OK: true},
+		Sha256: c,
+		File:   relative,
+	})
 	if err != nil {
 		log.Println("handleSha256sum", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
@@ -283,17 +334,27 @@ func main() {
 	log.Println("adam is running...")
 
 	cfgpath := filepath.Join(Home, ".config", "adam.toml")
-	log.Println("read config file at", cfgpath)
 	cfg = parseConfig(cfgpath)
 
 	if port != 0 {
 		cfg.Port = fmt.Sprintf(":%d", port)
+	} else if cfg.Port == "" {
+		cfg.Port = ":8080"
+		log.Println("no port specified, falling back to :8080")
 	}
+
 	if basedir != "" {
 		cfg.BaseDir = basedir
+	} else if cfg.BaseDir == "" {
+		cfg.BaseDir = filepath.Join(Home, ".adam")
+		log.Println("no base directory specified, falling back to", cfg.BaseDir)
 	}
+
 	if ccdir != "" {
 		cfg.CacheDir = ccdir
+	} else if cfg.CacheDir == "" {
+		cfg.CacheDir = filepath.Join(Home, ".cache", "adam")
+		log.Println("no cache directory specified, falling back to", cfg.CacheDir)
 	}
 
 	ok, err := exists(cfg.CacheDir)

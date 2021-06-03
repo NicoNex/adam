@@ -38,7 +38,7 @@ func parseConfig(path string) Config {
 	if _, err := toml.DecodeFile(path, &c); err != nil {
 		log.Println("parseConfig", err)
 	}
-	if !strings.HasPrefix(c.Port, ":") {
+	if c.Port != "" && !strings.HasPrefix(c.Port, ":") {
 		c.Port = fmt.Sprintf(":%s", c.Port)
 	}
 	return c
