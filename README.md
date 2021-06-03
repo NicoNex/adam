@@ -17,11 +17,12 @@ The configuration file must be in the [TOML](https://toml.io/en/) format as in t
 ```toml
 base_dir = "~/custom/path/to/adam/base/directory"
 port = ":8080"
+cache_dir = "/home/user/.cache/adam"
 ```
 
 Additionally to the configuration file Adam supports also argument flags, so if you want to specify other port/base_dir values you can run it like following:
 ```bash
-adam -d path/to/base/dir -p 8081
+adam -d path/to/base/dir -p 8081 -c cache
 ```
 Run `adam --help` for additional details.
 
@@ -47,13 +48,22 @@ Adam will respond with a json formed like this if successful:
 {
 	"ok": true,
 	"files": [
-		"example/directory/file1.png",
-		"example/directory/file2.png"
+		{
+			"path": "example/directory/file1.png",
+			"sha256sum": "d6663168db0e746cffeeaa8fcdc1c0486193e5e571524c202c546c743e0df7f9"
+		},
+		{
+			"path": "example/directory/file2.png",
+			"sha256sum": "5b708b81a6a9458c58d8115f0abd0ef4d692b380411c8b57c153fda9863d4184"
+		}		
 	]
 }
 ```
 
 If something went wrong with some of the files uploaded, the "ok" field will be set to `false` and the "files" array will contain only the files that have been successfully saved.
+
+In case of errors not related to file savings (such as errors related to the checksum) the "ok" field will still be set to `true`, but the errors will be shown in the "errors" field.
+This means that the the files were saved without any issues but that something has happened to some other related process. 
 
 ### /move
 This endpoint lets you move (and thus also rename) a file or directory from `source` to `dest`.
