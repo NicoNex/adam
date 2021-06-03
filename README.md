@@ -92,3 +92,32 @@ Eg:
 	"error": "file not found"
 }
 ```
+
+### /sha256sum
+This endpoint returns the sha256sum of the file at the path specified after the endpoint name.
+Eg:
+```bash
+curl 'http://localhost:8080/sha256sum/example/adam'
+```
+Will result in:
+```json
+{
+	"ok": true,
+	"file": "example/adam",
+	"sha256sum": "d6663168db0e746cffeeaa8fcdc1c0486193e5e571524c202c546c743e0df7f9"
+}
+
+```
+
+In case an error happens, the response will be as for the /del endpoint.
+Eg:
+```bash
+curl 'http://localhost:8080/sha256sum/example/adam/testError'
+```
+Will result in:
+```json
+{
+	"ok": false,
+	"error": "no sha256sum for path example/adam/testError"
+}
+```
