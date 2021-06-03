@@ -27,8 +27,9 @@ import (
 )
 
 type Config struct {
-	Port    string `toml:"port"`
-	BaseDir string `toml:"base_dir"`
+	Port     string `toml:"port"`
+	BaseDir  string `toml:"base_dir"`
+	CacheDir string `toml:"cache_dir"`
 }
 
 func parseConfig(path string) Config {

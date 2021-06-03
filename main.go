@@ -19,6 +19,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -32,7 +34,10 @@ import (
 	"sync"
 )
 
-var cfg Config
+var (
+	cfg Config
+	cc  Cache
+)
 
 // Returns the Base object with ok=false and the error message encoded in Json.
 func errorf(format string, a ...interface{}) string {
@@ -77,9 +82,37 @@ func saveFile(fpath string, content []byte) error {
 	return nil
 }
 
+func saveSha256sum(fpath string) {
+	f, err := os.Open(fpath)
+	if err != nil {
+		log.Println("saveSha256sum", "os.Open", err)
+		return
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		log.Println("saveSha256sum", "io.Copy", err)
+	}
+
+	encHex := hex.EncodeToString(h.Sum(nil))
+	if err := cc.Put([]byte(fpath), []byte(encHex)); err != nil {
+		log.Println("saveSha256sum", "cc.Put", err)
+	}
+}
+
+func getSha256sum(fpath string) string {
+	c, err := cc.Get([]byte(fpath))
+	if err != nil {
+		log.Println("getSha256sum", "cc.Get", err)
+		return ""
+	}
+	return string(c)
+}
+
 func handlePut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		fmt.Fprintln(w, errorf("invalid request, expected \"POST\" got %q", r.Method))
+		fmt.Fprintln(w, errorf("invalid request, expected POST got %s", r.Method))
 		return
 	}
 
@@ -126,8 +159,9 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 					ok = false
 					log.Println("handlePut", "saveFile", err)
 				} else {
+					go saveSha256sum(fpath)
 					mu.Lock()
-					savedFiles = append(savedFiles, fpath)
+					savedFiles = append(savedFiles, filepath.Join(fdir, fname))
 					mu.Unlock()
 				}
 			}()
@@ -141,13 +175,12 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, errorf(err.Error()))
 			return
 		}
-		fmt.Println(savedFiles)
 		fmt.Fprintln(w, string(b))
 	}
 }
 
 func handleDel(w http.ResponseWriter, r *http.Request) {
-	var path = filepath.Join(cfg.BaseDir, strings.TrimPrefix(r.URL.Path, "/del/"))
+	path := filepath.Join(cfg.BaseDir, strings.TrimPrefix(r.URL.Path, "/del/"))
 
 	ok, err := exists(path)
 	if err != nil {
@@ -157,7 +190,7 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !ok {
-		fmt.Fprintln(w, errorf("unable to find path %q", path))
+		fmt.Fprintln(w, errorf("unable to find path %s", path))
 		return
 	}
 
@@ -167,6 +200,11 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
+	go func() {
+		if err := cc.Del([]byte(path)); err != nil {
+			log.Println("handleDel", "cc.Del", err)
+		}
+	}()
 
 	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
@@ -214,12 +252,32 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(b))
 }
 
+func handleSha256sum(w http.ResponseWriter, r *http.Request) {
+	relative := strings.TrimPrefix(r.URL.Path, "/sha256sum/")
+	path := filepath.Join(cfg.BaseDir, relative)
+
+	c := getSha256sum(path)
+	if c == "" {
+		fmt.Fprintln(w, errorf("no sha256sum for path %s", relative))
+		return
+	}
+
+	b, err := json.Marshal(ChecksumResponse{Base: Base{OK: true}, Sha256: c, File: relative})
+	if err != nil {
+		log.Println("handleSha256sum", "json.Marshal", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+	fmt.Fprintln(w, string(b))
+}
+
 func main() {
 	var port int
-	var basedir string
+	var basedir, ccdir string
 
 	flag.IntVar(&port, "p", 0, "The port Adam will listen to.")
 	flag.StringVar(&basedir, "d", "", "The directory Adam will use as root directory.")
+	flag.StringVar(&ccdir, "c", "", "The directory Adam will use to cache the checksums.")
 	flag.Parse()
 
 	log.Println("adam is running...")
@@ -234,12 +292,28 @@ func main() {
 	if basedir != "" {
 		cfg.BaseDir = basedir
 	}
+	if ccdir != "" {
+		cfg.CacheDir = ccdir
+	}
+
+	ok, err := exists(cfg.CacheDir)
+	if err != nil {
+		log.Fatal(err)
+	} else if !ok {
+		log.Println("creating directory with path", cfg.CacheDir)
+		if err := os.MkdirAll(cfg.CacheDir, 0755); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	cc = Cache(cfg.CacheDir)
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
 	http.HandleFunc("/put/", handlePut)
 	http.HandleFunc("/del/", handleDel)
 	http.HandleFunc("/move", handleMove)
+	http.HandleFunc("/sha256sum/", handleSha256sum)
 
 	log.Fatal(http.ListenAndServe(cfg.Port, nil))
 }
