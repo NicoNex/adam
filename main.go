@@ -32,11 +32,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/bakape/thumbnailer"
 )
 
 var (
-	cfg Config
-	cc  Cache
+	cfg        Config
+	checksumCC Cache
+	thumbCC    Cache
 )
 
 // Returns the Base object with ok=false and the error message encoded in Json.
@@ -97,17 +100,17 @@ func saveSha256sum(fpath string) (string, error) {
 	}
 
 	encHex := hex.EncodeToString(h.Sum(nil))
-	if err := cc.Put([]byte(fpath), []byte(encHex)); err != nil {
-		log.Println("saveSha256sum", "cc.Put", err)
+	if err := checksumCC.Put([]byte(fpath), []byte(encHex)); err != nil {
+		log.Println("saveSha256sum", "checksumCC.Put", err)
 		return "", err
 	}
 	return encHex, nil
 }
 
 func getSha256sum(fpath string) (string, error) {
-	c, err := cc.Get([]byte(fpath))
+	c, err := checksumCC.Get([]byte(fpath))
 	if err != nil {
-		log.Println("getSha256sum", "cc.Get", err)
+		log.Println("getSha256sum", "checksumCC.Get", err)
 		return "", err
 	}
 	return string(c), nil
@@ -117,17 +120,57 @@ func moveSha256sum(src, dest string) error {
 	var s = []byte(src)
 	var d = []byte(dest)
 
-	hash, err := cc.Get(s)
+	hash, err := checksumCC.Get(s)
 	if err != nil {
-		log.Println("moveSha256sum", "cc.Get", err)
+		log.Println("moveSha256sum", "checksumCC.Get", err)
 		return err
 	}
-	if err := cc.Del(s); err != nil {
-		log.Println("moveSha256sum", "cc.Del", err)
+	if err := checksumCC.Del(s); err != nil {
+		log.Println("moveSha256sum", "checksumCC.Del", err)
+		return err // TODO: maybe you can continue here instead of returning.
+	}
+	if err := checksumCC.Put(d, hash); err != nil {
+		log.Println("moveSha256sum", "checksumCC.Put", err)
 		return err
 	}
-	if err := cc.Put(d, hash); err != nil {
-		log.Println("moveSha256sum", "cc.Put", err)
+	return nil
+}
+
+func saveThumbnail(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		log.Println("saveThumbnail", "os.Open", err)
+		return []byte{}, err
+	}
+
+	_, thumb, err := thumbnailer.Process(f, thumbnailer.Options{ThumbDims: thumbnailer.Dims{Width: 100, Height: 100}})
+	if err != nil {
+		log.Println("saveThumbnail", "thumbnailer.Process", err)
+		return []byte{}, err
+	}
+
+	if err := thumbCC.Put([]byte(path), thumb.Data); err != nil {
+		log.Println("saveThumbnail", "thumbCC.Put", err)
+		return []byte{}, err
+	}
+	return thumb.Data, nil
+}
+
+func moveThumbnail(src, dest string) error {
+	var s = []byte(src)
+	var d = []byte(dest)
+
+	thumb, err := thumbCC.Get(s)
+	if err != nil {
+		log.Println("moveThumbnail", "thumbCC.Get", err)
+		return err
+	}
+	if err := thumbCC.Del(s); err != nil {
+		log.Println("moveThumbnail", "thumbCC.Del", err)
+		return err
+	}
+	if err := thumbCC.Put(d, thumb); err != nil {
+		log.Println("moveThumbnail", "thumbCC.Put", err)
 		return err
 	}
 	return nil
@@ -180,11 +223,9 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				if err := saveFile(fpath, cnt); err == nil {
-					checksum, err := saveSha256sum(fpath)
-					if err != nil {
-						errors.Append(err)
-					}
-					savedFiles.Append(File{Path: filepath.Join(fdir, fname), Sha256sum: checksum})
+					go saveSha256sum(fpath)
+					go saveThumbnail(fpath)
+					savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
 				} else {
 					ok = false
 					errors.Append(err)
@@ -229,13 +270,9 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := Base{OK: true}
-	if err := cc.Del([]byte(path)); err != nil {
-		response.Error = err.Error()
-		log.Println("handleDel", "cc.Del", err)
-	}
-
-	b, err := json.Marshal(response)
+	go checksumCC.Del([]byte(path))
+	go thumbCC.Del([]byte(path))
+	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
 		log.Println("handleDel", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
@@ -285,12 +322,9 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := Base{OK: true}
-	if err := moveSha256sum(source, dest); err != nil {
-		res.Error = err.Error()
-	}
-
-	b, err := json.Marshal(res)
+	go moveSha256sum(source, dest)
+	go moveThumbnail(source, dest)
+	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
 		log.Println("handleMove", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
@@ -322,13 +356,25 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(b))
 }
 
+func handleThumbnail(w http.ResponseWriter, r *http.Request) {
+	relative := strings.TrimPrefix(r.URL.Path, "/thumb/")
+	path := filepath.Join(cfg.BaseDir, relative)
+
+	t, err := thumbCC.Get([]byte(path))
+	if err != nil {
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+	w.Write(t)
+}
+
 func main() {
 	var port int
 	var basedir, ccdir string
 
 	flag.IntVar(&port, "p", 0, "The port Adam will listen to.")
 	flag.StringVar(&basedir, "d", "", "The directory Adam will use as root directory.")
-	flag.StringVar(&ccdir, "c", "", "The directory Adam will use to cache the checksums.")
+	flag.StringVar(&ccdir, "c", "", "The directory Adam will use for the cache.")
 	flag.Parse()
 
 	log.Println("adam is running...")
@@ -367,7 +413,8 @@ func main() {
 		}
 	}
 
-	cc = Cache(cfg.CacheDir)
+	checksumCC = Cache(filepath.Join(cfg.CacheDir, "sha256"))
+	thumbCC = Cache(filepath.Join(cfg.CacheDir, "thumbnails"))
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
@@ -375,6 +422,7 @@ func main() {
 	http.HandleFunc("/del/", handleDel)
 	http.HandleFunc("/move", handleMove)
 	http.HandleFunc("/sha256sum/", handleSha256sum)
+	http.HandleFunc("/thumb/", handleThumbnail)
 
 	log.Fatal(http.ListenAndServe(cfg.Port, nil))
 }
