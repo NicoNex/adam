@@ -180,11 +180,8 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				if err := saveFile(fpath, cnt); err == nil {
-					checksum, err := saveSha256sum(fpath)
-					if err != nil {
-						errors.Append(err)
-					}
-					savedFiles.Append(File{Path: filepath.Join(fdir, fname), Sha256sum: checksum})
+					go saveSha256sum(fpath)
+					savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
 				} else {
 					ok = false
 					errors.Append(err)
@@ -229,13 +226,13 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := Base{OK: true}
-	if err := cc.Del([]byte(path)); err != nil {
-		response.Error = err.Error()
-		log.Println("handleDel", "cc.Del", err)
-	}
+	go func() {
+		if err := cc.Del([]byte(path)); err != nil {
+			log.Println("handleDel", "cc.Del", err)
+		}
+	}()
 
-	b, err := json.Marshal(response)
+	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
 		log.Println("handleDel", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))
@@ -285,12 +282,8 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := Base{OK: true}
-	if err := moveSha256sum(source, dest); err != nil {
-		res.Error = err.Error()
-	}
-
-	b, err := json.Marshal(res)
+	go moveSha256sum(source, dest)
+	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
 		log.Println("handleMove", "json.Marshal", err)
 		fmt.Fprintln(w, errorf(err.Error()))

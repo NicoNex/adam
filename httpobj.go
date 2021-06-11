@@ -37,5 +37,5 @@ type ChecksumResponse struct {
 
 type File struct {
 	Path      string `json:"path"`
-	Sha256sum string `json:"sha256sum"`
+	Sha256sum string `json:"sha256sum,omitempty"`
 }
