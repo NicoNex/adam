@@ -35,8 +35,8 @@ import (
 )
 
 var (
-	cfg Config
-	cc  Cache
+	cfg    Config
+	ccHash Cache
 )
 
 // Returns the Base object with ok=false and the error message encoded in Json.
@@ -97,17 +97,17 @@ func saveSha256sum(fpath string) (string, error) {
 	}
 
 	encHex := hex.EncodeToString(h.Sum(nil))
-	if err := cc.Put([]byte(fpath), []byte(encHex)); err != nil {
-		log.Println("saveSha256sum", "cc.Put", err)
+	if err := ccHash.Put([]byte(fpath), []byte(encHex)); err != nil {
+		log.Println("saveSha256sum", "ccHash.Put", err)
 		return "", err
 	}
 	return encHex, nil
 }
 
 func getSha256sum(fpath string) (string, error) {
-	c, err := cc.Get([]byte(fpath))
+	c, err := ccHash.Get([]byte(fpath))
 	if err != nil {
-		log.Println("getSha256sum", "cc.Get", err)
+		log.Println("getSha256sum", "ccHash.Get", err)
 		return "", err
 	}
 	return string(c), nil
@@ -117,17 +117,17 @@ func moveSha256sum(src, dest string) error {
 	var s = []byte(src)
 	var d = []byte(dest)
 
-	hash, err := cc.Get(s)
+	hash, err := ccHash.Get(s)
 	if err != nil {
-		log.Println("moveSha256sum", "cc.Get", err)
+		log.Println("moveSha256sum", "ccHash.Get", err)
 		return err
 	}
-	if err := cc.Del(s); err != nil {
-		log.Println("moveSha256sum", "cc.Del", err)
+	if err := ccHash.Del(s); err != nil {
+		log.Println("moveSha256sum", "ccHash.Del", err)
 		return err
 	}
-	if err := cc.Put(d, hash); err != nil {
-		log.Println("moveSha256sum", "cc.Put", err)
+	if err := ccHash.Put(d, hash); err != nil {
+		log.Println("moveSha256sum", "ccHash.Put", err)
 		return err
 	}
 	return nil
@@ -227,8 +227,8 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := cc.Del([]byte(path)); err != nil {
-			log.Println("handleDel", "cc.Del", err)
+		if err := ccHash.Del([]byte(path)); err != nil {
+			log.Println("handleDel", "ccHash.Del", err)
 		}
 	}()
 
@@ -360,7 +360,7 @@ func main() {
 		}
 	}
 
-	cc = Cache(cfg.CacheDir)
+	ccHash = Cache(filepath.Join(cfg.CacheDir, "sha256sum"))
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
