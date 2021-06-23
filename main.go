@@ -65,18 +65,13 @@ func saveFile(fpath string, content []byte) error {
 
 	// If the directory doesn't exist we create it.
 	if ok, err := exists(dir); !ok && err == nil {
-		log.Println("saveFile", "creating directory with path", dir)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Println("saveFile", "os.MkdirAll", err)
 			return err
 		}
 	} else if err != nil {
-		log.Println("saveFile", "exists", err)
 		return err
 	}
-
 	if err := os.WriteFile(fpath, content, 0755); err != nil {
-		log.Println("saveFile", "os.WriteFile", err)
 		return err
 	}
 	return nil
@@ -85,20 +80,17 @@ func saveFile(fpath string, content []byte) error {
 func saveSha256sum(fpath string) (string, error) {
 	f, err := os.Open(fpath)
 	if err != nil {
-		log.Println("saveSha256sum", "os.Open", err)
 		return "", err
 	}
 	defer f.Close()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		log.Println("saveSha256sum", "io.Copy", err)
 		return "", err
 	}
 
 	encHex := hex.EncodeToString(h.Sum(nil))
 	if err := ccHash.Put([]byte(fpath), []byte(encHex)); err != nil {
-		log.Println("saveSha256sum", "ccHash.Put", err)
 		return "", err
 	}
 	return encHex, nil
@@ -107,7 +99,6 @@ func saveSha256sum(fpath string) (string, error) {
 func getSha256sum(fpath string) (string, error) {
 	c, err := ccHash.Get([]byte(fpath))
 	if err != nil {
-		log.Println("getSha256sum", "ccHash.Get", err)
 		return "", err
 	}
 	return string(c), nil
@@ -119,15 +110,12 @@ func moveSha256sum(src, dest string) error {
 
 	hash, err := ccHash.Get(s)
 	if err != nil {
-		log.Println("moveSha256sum", "ccHash.Get", err)
 		return err
 	}
 	if err := ccHash.Del(s); err != nil {
-		log.Println("moveSha256sum", "ccHash.Del", err)
 		return err
 	}
 	if err := ccHash.Put(d, hash); err != nil {
-		log.Println("moveSha256sum", "ccHash.Put", err)
 		return err
 	}
 	return nil
@@ -180,7 +168,11 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				if err := saveFile(fpath, cnt); err == nil {
-					go saveSha256sum(fpath)
+					go func() {
+						if _, err := saveSha256sum(fpath); err != nil {
+							log.Println("handlePut", "saveSha256sum", err)
+						}
+					}()
 					savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
 				} else {
 					ok = false
@@ -282,7 +274,11 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go moveSha256sum(source, dest)
+	go func() {
+		if err := moveSha256sum(source, dest); err != nil {
+			log.Println("handleMove", "moveSha256sum", err)
+		}
+	}()
 	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
 		log.Println("handleMove", "json.Marshal", err)
