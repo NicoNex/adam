@@ -18,12 +18,12 @@
 
 package main
 
-import "github.com/prologic/bitcask"
+import "github.com/akrylysov/pogreb"
 
 type Cache string
 
 func (c Cache) Put(key, val []byte) error {
-	cc, err := bitcask.Open(string(c))
+	cc, err := pogreb.Open(string(c), nil)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func (c Cache) Put(key, val []byte) error {
 }
 
 func (c Cache) Get(key []byte) ([]byte, error) {
-	cc, err := bitcask.Open(string(c))
+	cc, err := pogreb.Open(string(c), nil)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -41,7 +41,7 @@ func (c Cache) Get(key []byte) ([]byte, error) {
 }
 
 func (c Cache) Del(key []byte) error {
-	cc, err := bitcask.Open(string(c))
+	cc, err := pogreb.Open(string(c), nil)
 	if err != nil {
 		return err
 	}
