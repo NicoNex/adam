@@ -5,7 +5,7 @@ Adam's Data Access Manager
 In order to install Adam you need to have the [go compiler](https://golang.org/) installed.
 Once downloaded simply running this command will install or update Adam in your `$GOPATH`:
 ```bash
-go get -u github.com/NicoNex/adam
+$ go get -u github.com/NicoNex/adam
 ```
 
 To install it from sources you can clone this repo locally, run `go build` inside Adam's root directory and then place the binary in your most preferred destination.
@@ -22,7 +22,7 @@ cache_dir = "/home/user/.cache/adam"
 
 Additionally to the configuration file Adam supports also argument flags, so if you want to specify other port/base_dir values you can run it like following:
 ```bash
-adam -d path/to/base/dir -p 8081 -c cache
+$ adam -d path/to/base/dir -p 8081 -c cache
 ```
 Run `adam --help` for additional details.
 
@@ -65,7 +65,7 @@ $ curl \
 	'http://localhost:8080/put/example/directory' 
 ```
 ```json
-	{
+{
   "ok": false,
   "files": [
     "example/directory/file1.png",
