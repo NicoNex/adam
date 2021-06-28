@@ -2,19 +2,19 @@ package main
 
 import "sync"
 
-type FileList struct {
-	s []File
+type StrList struct {
+	s []string
 	sync.Mutex
 }
 
-func (f *FileList) Append(a ...File) {
-	f.Lock()
-	f.s = append(f.s, a...)
-	f.Unlock()
+func (s *StrList) Append(a ...string) {
+	s.Lock()
+	s.s = append(s.s, a...)
+	s.Unlock()
 }
 
-func (f *FileList) Slice() []File {
-	return f.s
+func (s *StrList) Slice() []string {
+	return s.s
 }
 
 type ErrList struct {

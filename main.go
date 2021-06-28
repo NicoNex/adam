@@ -141,7 +141,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		wg         sync.WaitGroup
-		savedFiles FileList
+		savedFiles StrList
 		errors     ErrList
 		ok         = true
 	)
@@ -173,7 +173,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 							log.Println("handlePut", "saveSha256sum", err)
 						}
 					}()
-					savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
+					savedFiles.Append(filepath.Join(fdir, fname))
 				} else {
 					ok = false
 					errors.Append(err)
@@ -241,21 +241,21 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source := values.Get("source")
-	if source == "" {
-		fmt.Fprintln(w, errorf("no source path provided"))
+	oldpath := values.Get("oldpath")
+	if oldpath == "" {
+		fmt.Fprintln(w, errorf("missing oldpath query parameter"))
 		return
 	}
-	source = filepath.Join(cfg.BaseDir, source)
+	oldpath = filepath.Join(cfg.BaseDir, oldpath)
 
-	dest := values.Get("dest")
-	if dest == "" {
-		fmt.Fprintln(w, errorf("no dest path provided"))
+	newpath := values.Get("newpath")
+	if newpath == "" {
+		fmt.Fprintln(w, errorf("missing oldpath query parameter"))
 		return
 	}
-	dest = filepath.Join(cfg.BaseDir, dest)
+	newpath = filepath.Join(cfg.BaseDir, newpath)
 
-	destDir := filepath.Dir(dest)
+	destDir := filepath.Dir(newpath)
 	if ok, err := exists(destDir); !ok && err == nil {
 		if err := os.MkdirAll(destDir, 0755); err != nil {
 			log.Println("handleMove", "os.MkdirAll", err)
@@ -268,17 +268,18 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.Rename(source, dest); err != nil {
+	if err := os.Rename(oldpath, newpath); err != nil {
 		log.Println("handleMove", "os.Rename", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
 
 	go func() {
-		if err := moveSha256sum(source, dest); err != nil {
+		if err := moveSha256sum(oldpath, newpath); err != nil {
 			log.Println("handleMove", "moveSha256sum", err)
 		}
 	}()
+
 	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
 		log.Println("handleMove", "json.Marshal", err)
