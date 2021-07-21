@@ -71,7 +71,7 @@ func saveFile(fpath string, content []byte) error {
 	} else if err != nil {
 		return err
 	}
-	if err := os.WriteFile(fpath, content, 0755); err != nil {
+	if err := os.WriteFile(fpath, content, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -198,6 +198,11 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
+		return
+	}
+
 	path := filepath.Join(cfg.BaseDir, strings.TrimPrefix(r.URL.Path, "/del/"))
 
 	ok, err := exists(path)
@@ -234,6 +239,11 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
+		return
+	}
+
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		log.Println("handleMove", "url.ParseQuery", err)
@@ -250,7 +260,7 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 
 	newpath := values.Get("newpath")
 	if newpath == "" {
-		fmt.Fprintln(w, errorf("missing oldpath query parameter"))
+		fmt.Fprintln(w, errorf("missing newpath query parameter"))
 		return
 	}
 	newpath = filepath.Join(cfg.BaseDir, newpath)
@@ -290,6 +300,11 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSha256sum(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
+		return
+	}
+
 	relative := strings.TrimPrefix(r.URL.Path, "/sha256sum/")
 	path := filepath.Join(cfg.BaseDir, relative)
 
