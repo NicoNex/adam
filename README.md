@@ -33,8 +33,18 @@ All endpoints support the GET HTTP method except for the `/put` one that needs t
 ### /
 This endpoint lets you browse the directory tree adam is exposing.
 
+### /get
+This endpoint lets you download a file given its ID.
+
+Eg:
+```bash
+curl 'http://localhost:8080/get?id=959aec06-edfb-4efa-a114-2fbb8ee9dd29'
+```
+This way Adam will serve you the file if found or an error similar to the /del method if something went wrong.
+
 ### /put
 This endpoint lets you upload one or multiple files to a path specified in the URL.
+
 Eg: 
 ```bash
 $ curl -F 'files[]=@file1.png' -F 'files[]=@file2.webm' 'http://localhost:8080/put/example/directory' 
@@ -48,14 +58,23 @@ Adam will respond with a json formed like this if successful:
 {
   "ok": true,
   "files": [
-    "example/directory/file1.png",
-    "example/directory/file2.png"
+    {
+      "path":"example/directory/file1.png",
+      "sha256sum":"0c15e883dee85bb2f3540a47ec58f617a2547117f9096417ba5422268029f501",
+      "id":"959aec06-edfb-4efa-a114-2fbb8ee9dd29"
+    },
+    {
+      "path":"example/directory/file2.webm",
+      "sha256sum":"19cf8915f014fec66ebef02e6bd0de82e4591514165ea68a95b2ad71ac119fb2",
+      "id":"077b7b79-1262-45ba-a13a-cac61df3ff06"
+    },
   ]
 }
 ```
 
 If something went wrong with some of the files uploaded, the "ok" field will be set to `false` and the "files" array will contain only the files that have been successfully saved.
 In such case the response json will additionally have an `errors` field containing all the errors encountered while saving the files like in the following example:
+
 Eg: 
 ```bash
 $ curl \
@@ -68,8 +87,16 @@ $ curl \
 {
   "ok": false,
   "files": [
-    "example/directory/file1.png",
-    "example/directory/file2.webm"
+    {
+      "path":"example/directory/file1.png",
+      "sha256sum":"0c15e883dee85bb2f3540a47ec58f617a2547117f9096417ba5422268029f501",
+      "id":"959aec06-edfb-4efa-a114-2fbb8ee9dd29"
+    },
+    {
+      "path":"example/directory/file2.webm",
+      "sha256sum":"19cf8915f014fec66ebef02e6bd0de82e4591514165ea68a95b2ad71ac119fb2",
+      "id":"077b7b79-1262-45ba-a13a-cac61df3ff06"
+    },
   ],
   "errors": [
   	"could not save file example/directory/file3.mp4"
@@ -83,6 +110,7 @@ Adam for this endpoint expects two query parameters called `oldpath` and `newpat
 - `oldpath` is the original path of the file or directory to move or rename.
 - `newpath` is the destination path of the file or directory to move or rename.
 
+Optionally instead of `oldpath` you can provide Adam the `id` query parameter with the right file ID. 
 The response for this endpoint is the same as the response from the `/del` endpoint.
 
 #### Move example:
@@ -97,12 +125,27 @@ In this example we rename the file `example/directory/file2.png` to `example/dir
 $ curl 'http://localhost:8080/move?oldpath=example/directory/file2.png&newpath=example/directory/picture2.png'
 ```
 
+#### Move with ID example:
+In this example we will move the file referenced by the ID `077b7b79-1262-45ba-a13a-cac61df3ff06` to `example/directory/picture2.png`.
+```bash
+$ curl 'http://localhost:8080/move?id=077b7b79-1262-45ba-a13a-cac61df3ff06&newpath=example/file2.png'
+```
+
 ### /del
 This endpoint lets you delete a file or a directory.
+
 Eg:
 ```bash
 $ curl 'https://localhost:8080/del/example/directory/picture2.png'
-````
+```
+
+Optionally instead of specifying the file path you can provide its ID.
+
+Eg:
+```bash
+$ curl 'https://localhost:8080/del?id=077b7b79-1262-45ba-a13a-cac61df3ff06'
+```
+
 If successful you'll be presented with a response formed like this:
 ```json
 {
@@ -111,6 +154,7 @@ If successful you'll be presented with a response formed like this:
 ```
 
 Otherwise if not successful Adam will include the error description in the response.
+
 Eg:
 ```json
 {
@@ -121,21 +165,30 @@ Eg:
 
 ### /sha256sum
 This endpoint returns the sha256sum of the file at the path specified after the endpoint name.
+
 Eg:
 ```bash
 $ curl 'http://localhost:8080/sha256sum/example/adam'
 ```
-Will result in:
+
+Optionally instead of specifying the file path you can provide its ID.
+
+Eg:
+```bash
+$ curl 'https://localhost:8080/sha256sum?id=077b7b79-1262-45ba-a13a-cac61df3ff06'
+```
+
+If succesful the response will be formed like in the following example:
 ```json
 {
   "ok": true,
   "file": "example/adam",
   "sha256sum": "d6663168db0e746cffeeaa8fcdc1c0486193e5e571524c202c546c743e0df7f9"
 }
-
 ```
 
 In case an error happens, the response will be as for the /del endpoint.
+
 Eg:
 ```bash
 $ curl 'http://localhost:8080/sha256sum/example/adam/testError'
