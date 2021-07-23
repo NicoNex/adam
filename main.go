@@ -136,6 +136,35 @@ func moveID(src, dest string) error {
 	})
 }
 
+func handleGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
+		return
+	}
+
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		log.Println("handleGet", "url.ParseQuery", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	id := values.Get("id")
+	if id == "" {
+		fmt.Fprintln(w, errorf("missing id query parameter"))
+		return
+	}
+
+	path, err := ccID.Get([]byte(id))
+	if err != nil {
+		log.Println("handleGet", "ccID.Get", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	http.ServeFile(w, r, string(path))
+}
+
 func handlePut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		fmt.Fprintln(w, errorf("invalid request, expected POST got %s", r.Method))
@@ -240,7 +269,35 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := filepath.Join(cfg.BaseDir, strings.TrimPrefix(r.URL.Path, "/del/"))
+	relative := strings.TrimPrefix(r.URL.Path, "/del/")
+
+	if relative == "" {
+		values, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			log.Println("handleDel", "url.ParseQuery", err)
+			fmt.Fprintln(w, errorf(err.Error()))
+			return
+		}
+
+		id := values.Get("id")
+		if id == "" {
+			fmt.Fprintln(w, errorf("missing id query parameter or path"))
+			return
+		}
+
+		r, err := ccID.Get([]byte(id))
+		if err != nil {
+			log.Println("handleDel", "url.ParseQuery", err)
+			fmt.Fprintln(w, errorf(err.Error()))
+			return
+		} else if r == nil {
+			fmt.Fprintln(w, errorf("no path with id %s", id))
+			return
+		}
+		relative = string(r)
+	}
+
+	path := filepath.Join(cfg.BaseDir, relative)
 
 	ok, err := exists(path)
 	if err != nil {
@@ -295,8 +352,22 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 
 	oldpath := values.Get("oldpath")
 	if oldpath == "" {
-		fmt.Fprintln(w, errorf("missing oldpath query parameter"))
-		return
+		id := values.Get("id")
+		if id == "" {
+			fmt.Fprintln(w, errorf("missing either oldpath or id query parameter"))
+			return
+		}
+
+		p, err := ccID.Get([]byte(id))
+		if err != nil {
+			log.Println("handleMove", "ccID.Get", err)
+			fmt.Fprintln(w, errorf(err.Error()))
+			return
+		} else if p == nil {
+			fmt.Fprintln(w, errorf("no path with id %s", id))
+			return
+		}
+		oldpath = string(p)
 	}
 	oldpath = filepath.Join(cfg.BaseDir, oldpath)
 
@@ -353,6 +424,32 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relative := strings.TrimPrefix(r.URL.Path, "/sha256sum/")
+
+	if relative == "" {
+		values, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			log.Println("handleSha256sum", "url.ParseQuery", err)
+			fmt.Fprintln(w, errorf(err.Error()))
+			return
+		}
+
+		id := values.Get("id")
+		if id == "" {
+			fmt.Fprintln(w, errorf("missing id query parameter or path"))
+			return
+		}
+
+		r, err := ccID.Get([]byte(id))
+		if err != nil {
+			log.Println("handleSha256sum", "url.ParseQuery", err)
+			fmt.Fprintln(w, errorf(err.Error()))
+			return
+		} else if r == nil {
+			fmt.Fprintln(w, errorf("no path with id %s", id))
+			return
+		}
+		relative = string(r)
+	}
 	path := filepath.Join(cfg.BaseDir, relative)
 
 	c, err := getSha256sum(path)
@@ -424,6 +521,7 @@ func main() {
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
+	http.HandleFunc("/get/", handleGet)
 	http.HandleFunc("/put/", handlePut)
 	http.HandleFunc("/del/", handleDel)
 	http.HandleFunc("/move", handleMove)
