@@ -63,7 +63,7 @@ func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 
 	iter := cc.Items()
 
-	for err != nil {
+	for err == nil {
 		var k, v []byte
 
 		if k, v, err = iter.Next(); err == nil {

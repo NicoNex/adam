@@ -19,6 +19,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -80,15 +81,9 @@ func saveFile(fpath string, content []byte) error {
 	return nil
 }
 
-func saveSha256sum(fpath string) (string, error) {
-	f, err := os.Open(fpath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
+func saveSha256sum(fpath string, cnt []byte) (string, error) {
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := io.Copy(h, bytes.NewReader(cnt)); err != nil {
 		return "", err
 	}
 
@@ -124,12 +119,12 @@ func moveSha256sum(src, dest string) error {
 	return nil
 }
 
-func moveID(src, dest string) error {
-	return ccID.Fold(func(key, val []byte) error {
-		if string(val) == src {
-			if err := ccID.Put(key, []byte(dest)); err != nil {
-				return err
-			}
+func findIDFromPath(path string) (string, error) {
+	var id []byte
+
+	return string(id), ccID.Fold(func(key, val []byte) error {
+		if string(val) == path {
+			id = key
 			return ErrIterationDone
 		}
 		return nil
@@ -137,7 +132,7 @@ func moveID(src, dest string) error {
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
 		return
 	}
@@ -162,11 +157,11 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.ServeFile(w, r, string(path))
+	http.ServeFile(w, r, filepath.Join(cfg.BaseDir, string(path)))
 }
 
 func handlePut(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		fmt.Fprintln(w, errorf("invalid request, expected POST got %s", r.Method))
 		return
 	}
@@ -206,10 +201,10 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			fdir := strings.TrimPrefix(r.URL.Path, "/put/")
+			fdir := strings.TrimPrefix(r.URL.Path, "/put")
 			fpath := filepath.Join(cfg.BaseDir, fdir, fname)
 			wg.Add(1)
-			go func(fdir, fpath string) {
+			go func(fdir, fpath string, cnt []byte) {
 				defer wg.Done()
 
 				if err := saveFile(fpath, cnt); err != nil {
@@ -221,7 +216,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 
 				path := filepath.Join(fdir, fname)
 
-				hash, err := saveSha256sum(path)
+				hash, err := saveSha256sum(path, cnt)
 				if err != nil {
 					log.Println("handlePut", "saveSha256sum", err)
 					errs.Append(err)
@@ -248,7 +243,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 					errs.Append(err)
 					ok = false
 				}
-			}(fdir, fpath)
+			}(fdir, fpath, cnt)
 		}
 		wg.Wait()
 
@@ -267,12 +262,12 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDel(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
 		return
 	}
 
-	relative := strings.TrimPrefix(r.URL.Path, "/del/")
+	relative := strings.TrimPrefix(r.URL.Path, "/del")
 
 	if relative == "" {
 		values, err := url.ParseQuery(r.URL.RawQuery)
@@ -298,6 +293,8 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		relative = string(r)
+	} else {
+		relative = strings.TrimPrefix(relative, "/")
 	}
 
 	path := filepath.Join(cfg.BaseDir, relative)
@@ -341,7 +338,9 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMove(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+	var fileID string
+
+	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
 		return
 	}
@@ -361,6 +360,7 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		fileID = id
 		p, err := ccID.Get([]byte(id))
 		if err != nil {
 			log.Println("handleMove", "ccID.Get", err)
@@ -372,14 +372,12 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		}
 		oldpath = string(p)
 	}
-	oldpath = filepath.Join(cfg.BaseDir, oldpath)
 
 	newpath := values.Get("newpath")
 	if newpath == "" {
 		fmt.Fprintln(w, errorf("missing newpath query parameter"))
 		return
 	}
-	newpath = filepath.Join(cfg.BaseDir, newpath)
 
 	destDir := filepath.Dir(newpath)
 	if ok, err := exists(destDir); !ok && err == nil {
@@ -394,22 +392,33 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go func(oldpath, newpath string) {
+		if err := moveSha256sum(oldpath, newpath); err != nil {
+			log.Println("handleMove", "moveSha256sum", err)
+		}
+	}(oldpath, newpath)
+	go func(oldpath, newpath, fileID string) {
+		if fileID == "" {
+			id, err := findIDFromPath(oldpath)
+			if err != nil {
+				log.Println("handleMove", "getIDFromPath", err)
+				return
+			}
+			fileID = id
+		}
+
+		if err := ccID.Put([]byte(fileID), []byte(newpath)); err != nil {
+			log.Println("handleMove", "ccID.Put", err)
+		}
+	}(oldpath, newpath, fileID)
+
+	oldpath = filepath.Join(cfg.BaseDir, oldpath)
+	newpath = filepath.Join(cfg.BaseDir, newpath)
 	if err := os.Rename(oldpath, newpath); err != nil {
 		log.Println("handleMove", "os.Rename", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
-
-	go func() {
-		if err := moveSha256sum(oldpath, newpath); err != nil {
-			log.Println("handleMove", "moveSha256sum", err)
-		}
-	}()
-	go func() {
-		if err := moveID(oldpath, newpath); err != nil {
-			log.Println("handleMove", "moveID", err)
-		}
-	}()
 
 	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
@@ -421,14 +430,13 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSha256sum(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
 		return
 	}
 
-	relative := strings.TrimPrefix(r.URL.Path, "/sha256sum/")
-
-	if relative == "" {
+	path := strings.TrimPrefix(r.URL.Path, "/sha256sum")
+	if path == "" {
 		values, err := url.ParseQuery(r.URL.RawQuery)
 		if err != nil {
 			log.Println("handleSha256sum", "url.ParseQuery", err)
@@ -451,9 +459,10 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, errorf("no path with id %s", id))
 			return
 		}
-		relative = string(r)
+		path = string(r)
+	} else {
+		path = strings.TrimPrefix(path, "/")
 	}
-	path := filepath.Join(cfg.BaseDir, relative)
 
 	c, err := getSha256sum(path)
 	if err != nil {
@@ -464,7 +473,7 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 	b, err := json.Marshal(ChecksumResponse{
 		Base:   Base{OK: true},
 		Sha256: c,
-		File:   relative,
+		File:   path,
 	})
 	if err != nil {
 		log.Println("handleSha256sum", "json.Marshal", err)
@@ -524,10 +533,12 @@ func main() {
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
-	http.HandleFunc("/get/", handleGet)
-	http.HandleFunc("/put/", handlePut)
+	http.HandleFunc("/get", handleGet)
+	http.HandleFunc("/put", handlePut)
+	http.HandleFunc("/del", handleDel)
 	http.HandleFunc("/del/", handleDel)
 	http.HandleFunc("/move", handleMove)
+	http.HandleFunc("/sha256sum", handleSha256sum)
 	http.HandleFunc("/sha256sum/", handleSha256sum)
 
 	log.Fatal(http.ListenAndServe(cfg.Port, nil))
