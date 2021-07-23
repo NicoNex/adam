@@ -209,43 +209,46 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			fdir := strings.TrimPrefix(r.URL.Path, "/put/")
 			fpath := filepath.Join(cfg.BaseDir, fdir, fname)
 			wg.Add(1)
-			go func() {
+			go func(fdir, fpath string) {
 				defer wg.Done()
-				if err := saveFile(fpath, cnt); err == nil {
-					hash, err := saveSha256sum(fpath)
-					if err != nil {
-						log.Println("handlePut", "saveSha256sum", err)
-						errs.Append(err)
-						ok = false
-					}
 
-					if id, err := uuid.NewRandom(); err == nil {
-						path := filepath.Join(fdir, fname)
-
-						savedFiles.Append(File{
-							Path:      path,
-							ID:        id.String(),
-							Sha256sum: hash,
-						})
-
-						if err := ccID.Put([]byte(id.String()), []byte(path)); err != nil {
-							log.Println("handlePut", "ccID.Put", err)
-							errs.Append(err)
-							ok = false
-						}
-
-					} else {
-						log.Println("handlePut", "uuid.NewRandom", err)
-						errs.Append(err)
-						savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
-						ok = false
-					}
-				} else {
+				if err := saveFile(fpath, cnt); err != nil {
 					ok = false
 					errs.Append(err)
 					log.Println("handlePut", "saveFile", err)
+					return
 				}
-			}()
+
+				path := filepath.Join(fdir, fname)
+
+				hash, err := saveSha256sum(path)
+				if err != nil {
+					log.Println("handlePut", "saveSha256sum", err)
+					errs.Append(err)
+					ok = false
+				}
+
+				id, err := uuid.NewRandom()
+				if err != nil {
+					log.Println("handlePut", "uuid.NewRandom", err)
+					errs.Append(err)
+					savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
+					ok = false
+					return
+				}
+
+				savedFiles.Append(File{
+					Path:      path,
+					ID:        id.String(),
+					Sha256sum: hash,
+				})
+
+				if err := ccID.Put([]byte(id.String()), []byte(path)); err != nil {
+					log.Println("handlePut", "ccID.Put", err)
+					errs.Append(err)
+					ok = false
+				}
+			}(fdir, fpath)
 		}
 		wg.Wait()
 
@@ -318,12 +321,12 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := ccHash.Del([]byte(path)); err != nil {
+		if err := ccHash.Del([]byte(relative)); err != nil {
 			log.Println("handleDel", "ccHash.Del", err)
 		}
 	}()
 	go func() {
-		if err := ccID.Del([]byte(path)); err != nil {
+		if err := ccID.Del([]byte(relative)); err != nil {
 			log.Println("handleDel", "ccID.Del", err)
 		}
 	}()
