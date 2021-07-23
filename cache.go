@@ -18,7 +18,12 @@
 
 package main
 
-import "github.com/akrylysov/pogreb"
+import (
+	"errors"
+	"github.com/akrylysov/pogreb"
+)
+
+var ErrIterationDone = pogreb.ErrIterationDone
 
 type Cache string
 
@@ -47,4 +52,27 @@ func (c Cache) Del(key []byte) error {
 	}
 	defer cc.Close()
 	return cc.Delete(key)
+}
+
+func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
+	cc, err := pogreb.Open(string(c), nil)
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+
+	iter := cc.Items()
+
+	for err != nil {
+		var k, v []byte
+
+		if k, v, err = iter.Next(); err == nil {
+			err = fn(k, v)
+		}
+	}
+
+	if errors.Is(err, pogreb.ErrIterationDone) {
+		err = nil
+	}
+	return
 }

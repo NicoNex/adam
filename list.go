@@ -31,3 +31,18 @@ func (e *ErrList) Append(a ...error) {
 func (e *ErrList) Slice() []error {
 	return e.e
 }
+
+type FileList struct {
+	f []File
+	sync.Mutex
+}
+
+func (f *FileList) Append(a ...File) {
+	f.Lock()
+	f.f = append(f.f, a...)
+	f.Unlock()
+}
+
+func (f *FileList) Slice() []File {
+	return f.f
+}

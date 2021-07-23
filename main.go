@@ -32,11 +32,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 var (
 	cfg    Config
 	ccHash Cache
+	ccID   Cache
 )
 
 // Returns the Base object with ok=false and the error message encoded in Json.
@@ -121,6 +124,18 @@ func moveSha256sum(src, dest string) error {
 	return nil
 }
 
+func moveID(src, dest string) error {
+	return ccID.Fold(func(key, val []byte) error {
+		if string(val) == src {
+			if err := ccID.Put(key, []byte(dest)); err != nil {
+				return err
+			}
+			return ErrIterationDone
+		}
+		return nil
+	})
+}
+
 func handlePut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		fmt.Fprintln(w, errorf("invalid request, expected POST got %s", r.Method))
@@ -141,8 +156,8 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		wg         sync.WaitGroup
-		savedFiles StrList
-		errors     ErrList
+		savedFiles FileList
+		errs       ErrList
 		ok         = true
 	)
 
@@ -168,15 +183,37 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				if err := saveFile(fpath, cnt); err == nil {
-					go func() {
-						if _, err := saveSha256sum(fpath); err != nil {
-							log.Println("handlePut", "saveSha256sum", err)
+					hash, err := saveSha256sum(fpath)
+					if err != nil {
+						log.Println("handlePut", "saveSha256sum", err)
+						errs.Append(err)
+						ok = false
+					}
+
+					if id, err := uuid.NewRandom(); err == nil {
+						path := filepath.Join(fdir, fname)
+
+						savedFiles.Append(File{
+							Path:      path,
+							ID:        id.String(),
+							Sha256sum: hash,
+						})
+
+						if err := ccID.Put([]byte(id.String()), []byte(path)); err != nil {
+							log.Println("handlePut", "ccID.Put", err)
+							errs.Append(err)
+							ok = false
 						}
-					}()
-					savedFiles.Append(filepath.Join(fdir, fname))
+
+					} else {
+						log.Println("handlePut", "uuid.NewRandom", err)
+						errs.Append(err)
+						savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
+						ok = false
+					}
 				} else {
 					ok = false
-					errors.Append(err)
+					errs.Append(err)
 					log.Println("handlePut", "saveFile", err)
 				}
 			}()
@@ -186,7 +223,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 		b, err := json.Marshal(PutResponse{
 			Base:   Base{OK: ok},
 			Files:  savedFiles.Slice(),
-			Errors: errors.Slice(),
+			Errors: errs.Slice(),
 		})
 		if err != nil {
 			log.Println("handlePut", "json.Marshal", err)
@@ -226,6 +263,11 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		if err := ccHash.Del([]byte(path)); err != nil {
 			log.Println("handleDel", "ccHash.Del", err)
+		}
+	}()
+	go func() {
+		if err := ccID.Del([]byte(path)); err != nil {
+			log.Println("handleDel", "ccID.Del", err)
 		}
 	}()
 
@@ -287,6 +329,11 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		if err := moveSha256sum(oldpath, newpath); err != nil {
 			log.Println("handleMove", "moveSha256sum", err)
+		}
+	}()
+	go func() {
+		if err := moveID(oldpath, newpath); err != nil {
+			log.Println("handleMove", "moveID", err)
 		}
 	}()
 
@@ -373,6 +420,7 @@ func main() {
 	}
 
 	ccHash = Cache(filepath.Join(cfg.CacheDir, "sha256sum"))
+	ccID = Cache(filepath.Join(cfg.CacheDir, "ids"))
 
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
