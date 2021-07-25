@@ -483,6 +483,16 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(b))
 }
 
+func createIfNotExists(path string) {
+	if ok, err := exists(path); err != nil {
+		log.Fatal("could not create dir %q, reason: %v", path, err)
+	} else if !ok {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
 func main() {
 	var port int
 	var basedir, ccdir string
@@ -518,15 +528,8 @@ func main() {
 		log.Println("no cache directory specified, falling back to", cfg.CacheDir)
 	}
 
-	ok, err := exists(cfg.CacheDir)
-	if err != nil {
-		log.Fatal(err)
-	} else if !ok {
-		log.Println("creating directory with path", cfg.CacheDir)
-		if err := os.MkdirAll(cfg.CacheDir, 0755); err != nil {
-			log.Fatal(err)
-		}
-	}
+	go createIfNotExists(cfg.BaseDir)
+	go createIfNotExists(cfg.CacheDir)
 
 	ccHash = Cache(filepath.Join(cfg.CacheDir, "sha256sum"))
 	ccID = Cache(filepath.Join(cfg.CacheDir, "ids"))
