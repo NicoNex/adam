@@ -201,7 +201,7 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			fdir := strings.TrimPrefix(r.URL.Path, "/put")
+			fdir := strings.TrimPrefix(r.URL.Path, "/put/")
 			fpath := filepath.Join(cfg.BaseDir, fdir, fname)
 			wg.Add(1)
 			go func(fdir, fpath string, cnt []byte) {
@@ -537,7 +537,7 @@ func main() {
 	log.Println("setting the base directory at", cfg.BaseDir)
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
 	http.HandleFunc("/get", handleGet)
-	http.HandleFunc("/put", handlePut)
+	http.HandleFunc("/put/", handlePut)
 	http.HandleFunc("/del", handleDel)
 	http.HandleFunc("/del/", handleDel)
 	http.HandleFunc("/move", handleMove)
