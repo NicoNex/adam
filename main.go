@@ -203,6 +203,8 @@ func del(fpath string) error {
 }
 
 func move(oldpath, newpath string) error {
+	var wg sync.WaitGroup
+
 	absDest := filepath.Join(cfg.BaseDir, newpath)
 	destDir := filepath.Dir(absDest)
 
@@ -220,29 +222,59 @@ func move(oldpath, newpath string) error {
 	if err := os.Rename(absSrc, absDest); err != nil {
 		return err
 	}
-	if err := moveSha256sum(oldpath, newpath); err != nil {
-		return err
-	}
 
-	affected := make(map[string]string)
-	ccID.Fold(func(k, v []byte) error {
-		id := string(k)
-		path := string(v)
+	// Update the IDs in the cache.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-		if strings.HasPrefix(path, oldpath) {
-			path = strings.Replace(path, oldpath, newpath, -1)
-			affected[id] = path
+		affected := make(map[string]string)
+		ccID.Fold(func(k, v []byte) error {
+			id := string(k)
+			path := string(v)
+
+			if strings.HasPrefix(path, oldpath) {
+				affected[id] = strings.Replace(path, oldpath, newpath, -1)
+			}
+
+			return nil
+		})
+
+		for id, path := range affected {
+			if err := ccID.Put([]byte(id), []byte(path)); err != nil {
+				log.Println("move", "ccID.Put", err)
+			}
 		}
+	}()
 
-		return nil
-	})
+	// Update the checksums of the files.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-	for id, path := range affected {
-		if err := ccID.Put([]byte(id), []byte(path)); err != nil {
-			return err
+		affected := make(map[string]File)
+		ccHash.Fold(func(path, hash []byte) error {
+			p := string(path)
+			h := string(hash)
+
+			if strings.HasPrefix(p, oldpath) {
+				new := strings.Replace(p, oldpath, newpath, -1)
+				affected[p] = File{Sha256sum: h, Path: new}
+			}
+			return nil
+		})
+
+		for old, file := range affected {
+			if err := ccHash.Del([]byte(old)); err != nil {
+				log.Println("move", "ccHash.Del", err)
+			}
+			if err := ccHash.Put([]byte(file.Path), []byte(file.Sha256sum)); err != nil {
+				log.Println("move", "ccHash.Put", err)
+			}
 		}
-	}
+	}()
 
+	wg.Wait()
 	return nil
 }
 
