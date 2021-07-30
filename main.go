@@ -131,6 +131,121 @@ func findIDFromPath(path string) (string, error) {
 	})
 }
 
+func put(fname string, content []byte) (File, error) {
+	var (
+		id, hash string
+		path     = filepath.Join(cfg.BaseDir, fname)
+	)
+
+	// Generate UUID if fname doesn't exist.
+	if ok, err := exists(path); err != nil {
+		return File{}, err
+	} else if ok {
+		if id, err = findIDFromPath(fname); err != nil {
+			return File{}, err
+		}
+	} else {
+		ident, err := uuid.NewRandom()
+		if err != nil {
+			return File{}, err
+		}
+		id = ident.String()
+	}
+
+	// Save file to disk.
+	if err := saveFile(path, content); err != nil {
+		return File{}, err
+	}
+
+	// Save ID to cache.
+	if err := ccID.Put([]byte(id), []byte(fname)); err != nil {
+		return File{}, err
+	}
+
+	// Save sha256sum to cache.
+	hash, err := saveSha256sum(fname, content)
+	if err != nil {
+		return File{}, err
+	}
+
+	return File{ID: id, Sha256sum: hash, Path: fname}, nil
+}
+
+func del(fpath string) error {
+	var abs = filepath.Join(cfg.BaseDir, fpath)
+
+	if err := os.RemoveAll(abs); err != nil {
+		return err
+	}
+
+	// We delete all the occurrences that have 'fpath' as prefix.
+	deletable := make(map[string]string)
+	ccID.Fold(func(id, path []byte) error {
+		if strings.HasPrefix(string(path), fpath) {
+			deletable[string(id)] = string(path)
+		}
+		return nil
+	})
+
+	for id, path := range deletable {
+		i := []byte(id)
+		p := []byte(path)
+
+		if err := ccHash.Del(p); err != nil {
+			log.Println("del", "ccHash.Del", err)
+		}
+		if err := ccID.Del(i); err != nil {
+			log.Println("del", "ccID.Del", err)
+		}
+	}
+
+	return nil
+}
+
+func move(oldpath, newpath string) error {
+	absDest := filepath.Join(cfg.BaseDir, newpath)
+	destDir := filepath.Dir(absDest)
+
+	// Create destination directory if doesn't exist.
+	if ok, err := exists(destDir); !ok && err == nil {
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	absSrc := filepath.Join(cfg.BaseDir, oldpath)
+
+	if err := os.Rename(absSrc, absDest); err != nil {
+		return err
+	}
+	if err := moveSha256sum(oldpath, newpath); err != nil {
+		return err
+	}
+
+	affected := make(map[string]string)
+	ccID.Fold(func(k, v []byte) error {
+		id := string(k)
+		path := string(v)
+
+		if strings.HasPrefix(path, oldpath) {
+			path = strings.Replace(path, oldpath, newpath, -1)
+			affected[id] = path
+		}
+
+		return nil
+	})
+
+	for id, path := range affected {
+		if err := ccID.Put([]byte(id), []byte(path)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func handleGet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
@@ -179,10 +294,10 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		wg         sync.WaitGroup
-		savedFiles FileList
-		errs       ErrList
-		ok         = true
+		wg    sync.WaitGroup
+		files FileList
+		errs  ErrList
+		ok    = true
 	)
 
 	for _, headers := range r.MultipartForm.File {
@@ -203,54 +318,25 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 
 			fdir := strings.TrimPrefix(r.URL.Path, "/put")
 			fdir = strings.TrimPrefix(fdir, "/")
-			fpath := filepath.Join(cfg.BaseDir, fdir, fname)
+			fpath := filepath.Join(fdir, fname)
 			wg.Add(1)
-			go func(fdir, fpath string, cnt []byte) {
+			go func(fpath string, cnt []byte) {
 				defer wg.Done()
 
-				if err := saveFile(fpath, cnt); err != nil {
+				if file, err := put(fpath, cnt); err == nil {
+					files.Append(file)
+				} else {
 					ok = false
 					errs.Append(err)
-					log.Println("handlePut", "saveFile", err)
-					return
+					log.Println("handlePut", "put", err)
 				}
-
-				path := filepath.Join(fdir, fname)
-
-				hash, err := saveSha256sum(path, cnt)
-				if err != nil {
-					log.Println("handlePut", "saveSha256sum", err)
-					errs.Append(err)
-					ok = false
-				}
-
-				id, err := uuid.NewRandom()
-				if err != nil {
-					log.Println("handlePut", "uuid.NewRandom", err)
-					errs.Append(err)
-					savedFiles.Append(File{Path: filepath.Join(fdir, fname)})
-					ok = false
-					return
-				}
-
-				savedFiles.Append(File{
-					Path:      path,
-					ID:        id.String(),
-					Sha256sum: hash,
-				})
-
-				if err := ccID.Put([]byte(id.String()), []byte(path)); err != nil {
-					log.Println("handlePut", "ccID.Put", err)
-					errs.Append(err)
-					ok = false
-				}
-			}(fdir, fpath, cnt)
+			}(fpath, cnt)
 		}
 		wg.Wait()
 
 		b, err := json.Marshal(PutResponse{
 			Base:   Base{OK: ok},
-			Files:  savedFiles.Slice(),
+			Files:  files.Slice(),
 			Errors: errs.Slice(),
 		})
 		if err != nil {
@@ -298,36 +384,11 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 		relative = strings.TrimPrefix(relative, "/")
 	}
 
-	path := filepath.Join(cfg.BaseDir, relative)
-
-	ok, err := exists(path)
-	if err != nil {
-		log.Println("handleDel", "exists", err)
+	if err := del(relative); err != nil {
+		log.Println("handleDel", "del", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
-
-	if !ok {
-		fmt.Fprintln(w, errorf("unable to find path %s", path))
-		return
-	}
-
-	if err := os.RemoveAll(path); err != nil {
-		log.Println("handleDel", "os.RemoveAll", err)
-		fmt.Fprintln(w, errorf(err.Error()))
-		return
-	}
-
-	go func() {
-		if err := ccHash.Del([]byte(relative)); err != nil {
-			log.Println("handleDel", "ccHash.Del", err)
-		}
-	}()
-	go func() {
-		if err := ccID.Del([]byte(relative)); err != nil {
-			log.Println("handleDel", "ccID.Del", err)
-		}
-	}()
 
 	b, err := json.Marshal(Base{OK: true})
 	if err != nil {
@@ -339,8 +400,6 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMove(w http.ResponseWriter, r *http.Request) {
-	var fileID string
-
 	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
 		return
@@ -361,7 +420,6 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fileID = id
 		p, err := ccID.Get([]byte(id))
 		if err != nil {
 			log.Println("handleMove", "ccID.Get", err)
@@ -380,43 +438,8 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	destDir := filepath.Dir(newpath)
-	if ok, err := exists(destDir); !ok && err == nil {
-		if err := os.MkdirAll(destDir, 0755); err != nil {
-			log.Println("handleMove", "os.MkdirAll", err)
-			fmt.Fprintln(w, errorf(err.Error()))
-			return
-		}
-	} else if err != nil {
-		log.Println("handleMove", "os.MkdirAll", err)
-		fmt.Fprintln(w, errorf(err.Error()))
-		return
-	}
-
-	go func(oldpath, newpath string) {
-		if err := moveSha256sum(oldpath, newpath); err != nil {
-			log.Println("handleMove", "moveSha256sum", err)
-		}
-	}(oldpath, newpath)
-	go func(oldpath, newpath, fileID string) {
-		if fileID == "" {
-			id, err := findIDFromPath(oldpath)
-			if err != nil {
-				log.Println("handleMove", "getIDFromPath", err)
-				return
-			}
-			fileID = id
-		}
-
-		if err := ccID.Put([]byte(fileID), []byte(newpath)); err != nil {
-			log.Println("handleMove", "ccID.Put", err)
-		}
-	}(oldpath, newpath, fileID)
-
-	oldpath = filepath.Join(cfg.BaseDir, oldpath)
-	newpath = filepath.Join(cfg.BaseDir, newpath)
-	if err := os.Rename(oldpath, newpath); err != nil {
-		log.Println("handleMove", "os.Rename", err)
+	if err := move(oldpath, newpath); err != nil {
+		log.Println("handleMove", "move", err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
