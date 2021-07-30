@@ -23,6 +23,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -139,33 +140,33 @@ func put(fname string, content []byte) (File, error) {
 
 	// Generate UUID if fname doesn't exist.
 	if ok, err := exists(path); err != nil {
-		return File{}, err
+		return File{}, fmt.Errorf("put exists: %w", err)
 	} else if ok {
 		if id, err = findIDFromPath(fname); err != nil {
-			return File{}, err
+			return File{}, fmt.Errorf("put findIDFromPath: %w", err)
 		}
 	} else {
 		ident, err := uuid.NewRandom()
 		if err != nil {
-			return File{}, err
+			return File{}, fmt.Errorf("put uuid.NewRandom: %w", err)
 		}
 		id = ident.String()
 	}
 
 	// Save file to disk.
 	if err := saveFile(path, content); err != nil {
-		return File{}, err
+		return File{}, fmt.Errorf("put saveFile: %w", err)
 	}
 
 	// Save ID to cache.
 	if err := ccID.Put([]byte(id), []byte(fname)); err != nil {
-		return File{}, err
+		return File{}, fmt.Errorf("put ccID.Put: %w", err)
 	}
 
 	// Save sha256sum to cache.
 	hash, err := saveSha256sum(fname, content)
 	if err != nil {
-		return File{}, err
+		return File{}, fmt.Errorf("put saveSha256sum: %w", err)
 	}
 
 	return File{ID: id, Sha256sum: hash, Path: fname}, nil
@@ -175,7 +176,7 @@ func del(fpath string) error {
 	var abs = filepath.Join(cfg.BaseDir, fpath)
 
 	if err := os.RemoveAll(abs); err != nil {
-		return err
+		return fmt.Errorf("del os.RemoveAll: %w", err)
 	}
 
 	// We delete all the occurrences that have 'fpath' as prefix.
@@ -211,16 +212,16 @@ func move(oldpath, newpath string) error {
 	// Create destination directory if doesn't exist.
 	if ok, err := exists(destDir); !ok && err == nil {
 		if err := os.MkdirAll(destDir, 0755); err != nil {
-			return err
+			return fmt.Errorf("move os.MkdirAll: %w", err)
 		}
 	} else if err != nil {
-		return err
+		return fmt.Errorf("move exists: %w", err)
 	}
 
 	absSrc := filepath.Join(cfg.BaseDir, oldpath)
 
 	if err := os.Rename(absSrc, absDest); err != nil {
-		return err
+		return fmt.Errorf("move os.Rename: %w", err)
 	}
 
 	// Update the IDs in the cache.
@@ -359,8 +360,8 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 					files.Append(file)
 				} else {
 					ok = false
-					errs.Append(err)
-					log.Println("handlePut", "put", err)
+					log.Println("handlePut", err)
+					errs.Append(errors.Unwrap(err))
 				}
 			}(fpath, cnt)
 		}
@@ -417,7 +418,8 @@ func handleDel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := del(relative); err != nil {
-		log.Println("handleDel", "del", err)
+		log.Println("handleDel", err)
+		err = errors.Unwrap(err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
@@ -471,7 +473,8 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := move(oldpath, newpath); err != nil {
-		log.Println("handleMove", "move", err)
+		log.Println("handleMove", err)
+		err = errors.Unwrap(err)
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
 	}
@@ -541,7 +544,7 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 
 func createIfNotExists(path string) {
 	if ok, err := exists(path); err != nil {
-		log.Fatal("could not create dir %q, reason: %v", path, err)
+		log.Fatalf("could not create dir %q, reason: %v", path, err)
 	} else if !ok {
 		if err := os.MkdirAll(path, 0755); err != nil {
 			log.Fatal(err)
