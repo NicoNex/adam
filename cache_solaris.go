@@ -1,4 +1,4 @@
-// +build !solaris
+// +build solaris
 
 /*
  * Adam
@@ -22,59 +22,55 @@ package main
 
 import (
 	"errors"
-	"github.com/akrylysov/pogreb"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
-var ErrIterationDone = pogreb.ErrIterationDone
+var ErrIterationDone = errors.New("iteration done")
 
 type Cache string
 
 func (c Cache) Put(key, val []byte) error {
-	cc, err := pogreb.Open(string(c), nil)
+	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
 		return err
 	}
 	defer cc.Close()
-	return cc.Put(key, val)
+	return cc.Put(key, val, nil)
 }
 
 func (c Cache) Get(key []byte) ([]byte, error) {
-	cc, err := pogreb.Open(string(c), nil)
+	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
 		return []byte{}, err
 	}
 	defer cc.Close()
-	return cc.Get(key)
+	return cc.Get(key, nil)
 }
 
 func (c Cache) Del(key []byte) error {
-	cc, err := pogreb.Open(string(c), nil)
+	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
 		return err
 	}
 	defer cc.Close()
-	return cc.Delete(key)
+	return cc.Delete(key, nil)
 }
 
 func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
-	cc, err := pogreb.Open(string(c), nil)
+	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
 		return err
 	}
 	defer cc.Close()
 
-	iter := cc.Items()
+	iter := cc.NewIterator(nil, nil)
 
-	for err == nil {
-		var k, v []byte
-
-		if k, v, err = iter.Next(); err == nil {
-			err = fn(k, v)
+	for iter.Next() {
+		if err := fn(iter.Key(), iter.Value()); err != nil {
+			break
 		}
 	}
-
-	if errors.Is(err, pogreb.ErrIterationDone) {
-		err = nil
-	}
-	return
+	iter.Release()
+	
+	return iter.Error()
 }
