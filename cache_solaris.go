@@ -71,6 +71,6 @@ func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 		}
 	}
 	iter.Release()
-	
+
 	return iter.Error()
 }

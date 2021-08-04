@@ -279,6 +279,35 @@ func move(oldpath, newpath string) error {
 	return nil
 }
 
+func restore(files []File) (errs []error) {
+	for _, f := range files {
+		if err := ccID.Put([]byte(f.ID), []byte(f.Path)); err != nil {
+			e := fmt.Errorf("unable to restore ID for %s: %w\n", f.Path, err)
+			errs = append(errs, e)
+		}
+		if err := ccHash.Put([]byte(f.Path), []byte(f.Sha256sum)); err != nil {
+			e := fmt.Errorf("unable to restore sha256sum for %s: %w\n", f.Path, err)
+			errs = append(errs, e)
+		}
+	}
+	return
+}
+
+func restoreFile(fpath string) []error {
+	var files []File
+
+	b, err := os.ReadFile(fpath)
+	if err != nil {
+		return []error{err}
+	}
+
+	if err := json.Unmarshal(b, &files); err != nil {
+		return []error{err}
+	}
+
+	return restore(files)
+}
+
 func handleGet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
@@ -542,6 +571,81 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(b))
 }
 
+func handleGetMeta(w http.ResponseWriter, r *http.Request) {
+	var (
+		files []File
+		errs  []error
+	)
+
+	if r.Method != http.MethodGet {
+		fmt.Fprintln(w, errorf("invalid request, expected GET got %s", r.Method))
+		return
+	}
+
+	err := ccID.Fold(func(id, path []byte) error {
+		h, err := ccHash.Get(path)
+		if err != nil {
+			log.Println("handleGetMeta", "ccHash.Get", err)
+			errs = append(errs, err)
+			return nil
+		}
+
+		files = append(files, File{
+			ID:        string(id),
+			Path:      string(path),
+			Sha256sum: string(h),
+		})
+		return nil
+	})
+	if err != nil {
+		log.Println("handleGetMeta", "ccID.Fold", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	b, err := json.Marshal(PutResponse{
+		Base:   Base{OK: len(errs) == 0},
+		Files:  files,
+		Errors: errs,
+	})
+	if err != nil {
+		log.Println("handleGetMeta", "json.Marshal", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	fmt.Fprintln(w, string(b))
+}
+
+func handleSetMeta(w http.ResponseWriter, r *http.Request) {
+	var files []File
+
+	if r.Method != http.MethodPost {
+		fmt.Fprintln(w, errorf("invalid request, expected POST got %s", r.Method))
+		return
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&files)
+	if err != nil {
+		log.Println("handleSetMeta", "json.Decoder.Decode", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	errs := restore(files)
+	b, err := json.Marshal(PutResponse{
+		Base:   Base{OK: len(errs) == 0},
+		Errors: errs,
+	})
+	if err != nil {
+		log.Println("handleSetMeta", "json.Marshal", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	fmt.Fprintln(w, string(b))
+}
+
 func createIfNotExists(path string) {
 	if ok, err := exists(path); err != nil {
 		log.Fatalf("could not create dir %q, reason: %v", path, err)
@@ -553,18 +657,39 @@ func createIfNotExists(path string) {
 }
 
 func main() {
-	var port int
-	var basedir, ccdir string
+	var (
+		port       int
+		basedir    string
+		ccdir      string
+		backupFile string
+	)
 
 	flag.IntVar(&port, "p", 0, "The port Adam will listen to.")
 	flag.StringVar(&basedir, "d", "", "The directory Adam will use as root directory.")
 	flag.StringVar(&ccdir, "c", "", "The directory Adam will use to cache the checksums.")
+	flag.StringVar(&backupFile, "restore", "", "The path to the json file Adam will use to restore the caches.")
 	flag.Parse()
-
-	log.Println("adam is running...")
 
 	cfgpath := filepath.Join(Home, ".config", "adam.toml")
 	cfg = parseConfig(cfgpath)
+
+	if ccdir != "" {
+		cfg.CacheDir = ccdir
+	} else if cfg.CacheDir == "" {
+		cfg.CacheDir = filepath.Join(Home, ".cache", "adam")
+		log.Println("no cache directory specified, falling back to", cfg.CacheDir)
+	}
+
+	if backupFile != "" {
+		if errs := restoreFile(backupFile); len(errs) != 0 {
+			for _, e := range errs {
+				fmt.Println(e)
+			}
+		} else {
+			fmt.Println("ok")
+		}
+		return
+	}
 
 	if port != 0 {
 		cfg.Port = fmt.Sprintf(":%d", port)
@@ -580,13 +705,6 @@ func main() {
 		log.Println("no base directory specified, falling back to", cfg.BaseDir)
 	}
 
-	if ccdir != "" {
-		cfg.CacheDir = ccdir
-	} else if cfg.CacheDir == "" {
-		cfg.CacheDir = filepath.Join(Home, ".cache", "adam")
-		log.Println("no cache directory specified, falling back to", cfg.CacheDir)
-	}
-
 	go createIfNotExists(cfg.BaseDir)
 	go createIfNotExists(cfg.CacheDir)
 
@@ -594,6 +712,8 @@ func main() {
 	ccID = Cache(filepath.Join(cfg.CacheDir, "ids"))
 
 	log.Println("setting the base directory at", cfg.BaseDir)
+	log.Println("adam is running...")
+
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
 	http.HandleFunc("/get", handleGet)
 	http.HandleFunc("/put", handlePut)
@@ -603,6 +723,8 @@ func main() {
 	http.HandleFunc("/move", handleMove)
 	http.HandleFunc("/sha256sum", handleSha256sum)
 	http.HandleFunc("/sha256sum/", handleSha256sum)
+	http.HandleFunc("/get_meta", handleGetMeta)
+	http.HandleFunc("/set_meta", handleSetMeta)
 
 	log.Fatal(http.ListenAndServe(cfg.Port, nil))
 }

@@ -1,19 +1,18 @@
 package main
 
 import (
+	"github.com/stretchr/testify/assert"
 	"path/filepath"
 	"testing"
-	"github.com/stretchr/testify/assert"
 )
 
 var (
-	id []byte
-	fname = filepath.Join("testdir", "test.txt")
-	fname2 = filepath.Join("dirtest", "something-else", fname)
-	data = []byte("test data")
+	id        []byte
+	fname     = filepath.Join("testdir", "test.txt")
+	fname2    = filepath.Join("dirtest", "something-else", fname)
+	data      = []byte("test data")
 	sha256sum = "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
 )
-
 
 func TestPut(t *testing.T) {
 	f, err := put(fname, data)
@@ -74,9 +73,9 @@ func TestDel(t *testing.T) {
 
 func init() {
 	cfg = Config{
-		BaseDir: filepath.Join(Home, ".adam_test"),
+		BaseDir:  filepath.Join(Home, ".adam_test"),
 		CacheDir: filepath.Join(Home, ".cache", "adam_test"),
-		Port: ":8080",
+		Port:     ":8080",
 	}
 
 	createIfNotExists(cfg.BaseDir)
