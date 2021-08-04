@@ -71,6 +71,34 @@ func TestDel(t *testing.T) {
 	assert.Nil(t, hash)
 }
 
+func TestRestore(t *testing.T) {
+	var files = []File{
+		{"test/file0.txt", "sha256sum", "test_id_0"},
+		{"test/file1.txt", "sha256sum", "test_id_1"},
+		{"test/file2.txt", "sha256sum", "test_id_2"},
+		{"test/file3.txt", "sha256sum", "test_id_3"},
+		{"test/file4.txt", "sha256sum", "test_id_4"},
+		{"test/file5.txt", "sha256sum", "test_id_5"},
+		{"test/file6.txt", "sha256sum", "test_id_6"},
+		{"test/file7.txt", "sha256sum", "test_id_7"},
+		{"test/file8.txt", "sha256sum", "test_id_8"},
+		{"test/file9.txt", "sha256sum", "test_id_9"},
+	}
+
+	errs := restore(files)
+	assert.True(t, len(errs) == 0, "length of errors not zero")
+
+	for _, f := range files {
+		path, err := ccID.Get([]byte(f.ID))
+		assert.NoError(t, err)
+		assert.NotNil(t, path)
+
+		hash, err := ccHash.Get([]byte(f.Path))
+		assert.NoError(t, err)
+		assert.NotNil(t, hash)
+	}
+}
+
 func init() {
 	cfg = Config{
 		BaseDir:  filepath.Join(Home, ".adam_test"),
