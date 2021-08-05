@@ -27,9 +27,13 @@ import (
 )
 
 type Config struct {
-	Port     string `toml:"port"`
-	BaseDir  string `toml:"base_dir"`
-	CacheDir string `toml:"cache_dir"`
+	Port       string `toml:"port"`
+	BaseDir    string `toml:"base_dir"`
+	CacheDir   string `toml:"cache_dir"`
+	CertPath   string `toml:"cert_path"`
+	ServerKey  string `toml:"server_key"`
+	EnableTLS  bool   `toml:"enable_tls"`
+	backupFile string
 }
 
 func parseConfig(path string) Config {

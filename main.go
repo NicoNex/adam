@@ -656,32 +656,46 @@ func createIfNotExists(path string) {
 	}
 }
 
-func main() {
-	var (
-		port       int
-		basedir    string
-		ccdir      string
-		backupFile string
-	)
+func config() Config {
+	var cfg = parseConfig(filepath.Join(Home, ".config", "adam.toml"))
 
-	flag.IntVar(&port, "p", 0, "The port Adam will listen to.")
-	flag.StringVar(&basedir, "d", "", "The directory Adam will use as root directory.")
-	flag.StringVar(&ccdir, "c", "", "The directory Adam will use to cache the checksums.")
-	flag.StringVar(&backupFile, "restore", "", "The path to the json file Adam will use to restore the caches.")
-	flag.Parse()
-
-	cfgpath := filepath.Join(Home, ".config", "adam.toml")
-	cfg = parseConfig(cfgpath)
-
-	if ccdir != "" {
-		cfg.CacheDir = ccdir
-	} else if cfg.CacheDir == "" {
-		cfg.CacheDir = filepath.Join(Home, ".cache", "adam")
-		log.Println("no cache directory specified, falling back to", cfg.CacheDir)
+	if cfg.Port == "" {
+		cfg.Port = ":8080"
 	}
 
-	if backupFile != "" {
-		if errs := restoreFile(backupFile); len(errs) != 0 {
+	flag.StringVar(&cfg.Port, "p", cfg.Port, "The port Adam will listen to.")
+	flag.StringVar(&cfg.BaseDir, "d", cfg.BaseDir, "The directory Adam will use as root directory.")
+	flag.StringVar(&cfg.CacheDir, "c", cfg.CacheDir, "The directory Adam will use to cache the checksums.")
+	flag.StringVar(&cfg.backupFile, "restore", cfg.backupFile, "The path to the json file Adam will use to restore the caches.")
+	flag.StringVar(&cfg.CertPath, "cert", cfg.CertPath, "The path to the certificate.")
+	flag.StringVar(&cfg.ServerKey, "keys", cfg.ServerKey, "The path to the file containing the private keys that match with the certificate.")
+	flag.BoolVar(&cfg.EnableTLS, "tls", cfg.EnableTLS, "Enable HTTPS connections.")
+	flag.Parse()
+
+	if !strings.HasPrefix(cfg.Port, ":") {
+		cfg.Port = fmt.Sprintf(":%s", cfg.Port)
+	}
+	if cfg.CacheDir == "" {
+		cfg.CacheDir = filepath.Join(Home, ".cache", "adam")
+	}
+	if cfg.BaseDir == "" {
+		cfg.BaseDir = filepath.Join(Home, ".adam")
+	}
+	if cfg.CertPath != "" && cfg.ServerKey != "" {
+		cfg.EnableTLS = true
+	}
+	if cfg.EnableTLS && cfg.Port == ":8080" {
+		cfg.Port = ":443"
+	}
+
+	return cfg
+}
+
+func main() {
+	cfg = config()
+
+	if cfg.backupFile != "" {
+		if errs := restoreFile(cfg.backupFile); len(errs) != 0 {
 			for _, e := range errs {
 				fmt.Println(e)
 			}
@@ -691,28 +705,13 @@ func main() {
 		return
 	}
 
-	if port != 0 {
-		cfg.Port = fmt.Sprintf(":%d", port)
-	} else if cfg.Port == "" {
-		cfg.Port = ":8080"
-		log.Println("no port specified, falling back to :8080")
-	}
-
-	if basedir != "" {
-		cfg.BaseDir = basedir
-	} else if cfg.BaseDir == "" {
-		cfg.BaseDir = filepath.Join(Home, ".adam")
-		log.Println("no base directory specified, falling back to", cfg.BaseDir)
-	}
-
 	go createIfNotExists(cfg.BaseDir)
 	go createIfNotExists(cfg.CacheDir)
 
 	ccHash = Cache(filepath.Join(cfg.CacheDir, "sha256sum"))
 	ccID = Cache(filepath.Join(cfg.CacheDir, "ids"))
 
-	log.Println("setting the base directory at", cfg.BaseDir)
-	log.Println("adam is running...")
+	log.Printf("Adam is running on port %s...\n", cfg.Port)
 
 	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir(cfg.BaseDir))))
 	http.HandleFunc("/get", handleGet)
@@ -726,5 +725,9 @@ func main() {
 	http.HandleFunc("/get_meta", handleGetMeta)
 	http.HandleFunc("/set_meta", handleSetMeta)
 
-	log.Fatal(http.ListenAndServe(cfg.Port, nil))
+	if cfg.EnableTLS {
+		log.Fatal(http.ListenAndServeTLS(cfg.Port, cfg.CertPath, cfg.ServerKey, nil))
+	} else {
+		log.Fatal(http.ListenAndServe(cfg.Port, nil))
+	}
 }
