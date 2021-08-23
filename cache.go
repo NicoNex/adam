@@ -1,4 +1,4 @@
-// +build !solaris
+// +build !windows !solaris
 
 /*
  * Adam
@@ -21,60 +21,69 @@
 package main
 
 import (
-	"errors"
-	"github.com/akrylysov/pogreb"
+    "errors"
+    "git.mills.io/prologic/bitcask"
 )
 
-var ErrIterationDone = pogreb.ErrIterationDone
+var ErrIterationDone = errors.New("iteration done")
 
 type Cache string
 
 func (c Cache) Put(key, val []byte) error {
-	cc, err := pogreb.Open(string(c), nil)
-	if err != nil {
-		return err
-	}
-	defer cc.Close()
-	return cc.Put(key, val)
+    cc, err := bitcask.Open(string(c))
+    if err != nil {
+        return err
+    }
+    defer cc.Close()
+    return cc.Put(key, val)
 }
 
 func (c Cache) Get(key []byte) ([]byte, error) {
-	cc, err := pogreb.Open(string(c), nil)
-	if err != nil {
-		return []byte{}, err
-	}
-	defer cc.Close()
-	return cc.Get(key)
+    cc, err := bitcask.Open(string(c))
+    if err != nil {
+        return []byte{}, err
+    }
+    defer cc.Close()
+    
+    val, err := cc.Get(key)
+    if errors.Is(err, bitcask.ErrKeyNotFound) {
+        return nil, nil
+    }
+    return val, err
 }
 
 func (c Cache) Del(key []byte) error {
-	cc, err := pogreb.Open(string(c), nil)
-	if err != nil {
-		return err
-	}
-	defer cc.Close()
-	return cc.Delete(key)
+    cc, err := bitcask.Open(string(c))
+    if err != nil {
+        return err
+    }
+    defer cc.Close()
+    
+    err = cc.Delete(key)
+    if errors.Is(err, bitcask.ErrKeyNotFound) {
+        return nil
+    }
+    return err
 }
 
 func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
-	cc, err := pogreb.Open(string(c), nil)
-	if err != nil {
-		return err
-	}
-	defer cc.Close()
+    cc, err := bitcask.Open(string(c))
+    if err != nil {
+        return err
+    }
+    defer cc.Close()
 
-	iter := cc.Items()
+    err = cc.Fold(func(key []byte) error {
+        val, err := cc.Get(key)
+        if err != nil {
+            return err
+        }
 
-	for err == nil {
-		var k, v []byte
+        return fn(key,val)
+    })
 
-		if k, v, err = iter.Next(); err == nil {
-			err = fn(k, v)
-		}
-	}
-
-	if errors.Is(err, pogreb.ErrIterationDone) {
-		err = nil
-	}
-	return
+    if errors.Is(err, ErrIterationDone) {
+        return nil
+    }
+    return err
 }
