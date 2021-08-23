@@ -1,6 +1,8 @@
 # adam
 Adam's Data Access Manager
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/NicoNex/adam)](https://goreportcard.com/report/github.com/NicoNex/adam)
+
 ## Installation
 In order to install Adam you need to have the [go compiler](https://golang.org/) installed.
 Once downloaded simply running this command will install or update Adam in your `$GOPATH`:
