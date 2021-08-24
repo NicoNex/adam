@@ -1,4 +1,4 @@
-// +build !windows !solaris
+// +build !windows, !solaris
 
 /*
  * Adam - Adam's Data Access Manager
