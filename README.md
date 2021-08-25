@@ -30,7 +30,7 @@ Run `adam --help` for additional details.
 
 
 ## Endpoints
-All endpoints support the GET HTTP method except for the `/put` one that needs the request to be POST.
+All endpoints support the GET HTTP method except for the `/put` and `/set_meta` ones that needs the request to be POST.
 
 ### /
 This endpoint lets you browse the directory tree adam is exposing.
@@ -202,3 +202,57 @@ Will result in:
   "error": "no sha256sum for path example/adam/testError"
 }
 ```
+
+### /get_meta
+This endpoint returns all the metadata about all the files managed by Adam.
+
+Eg:
+```bash
+$ curl 'http://localhost:8080/get_meta'
+```
+
+Will result in:
+```json
+{
+  "ok": true,
+  "files": [
+    {
+      "path": "photo.png",
+      "sha256sum": "ea673f3cfb90abab81965992ba51202759349b0c31d030241263b256e625e22d",
+      "id": "be377efe-0e07-4f16-abf3-f9b53d9cc1bf"
+    },
+    {
+      "path": "videos/testVideo.png",
+      "sha256sum": "f158e70d47244b5606f5751118f367b129eafbc9b5a12278addb875ef80401f8",
+      "id": "959aec06-edfb-4efa-a114-2fbb8ee9dd29"
+    },
+    {
+      "path": "test/assets/image.jpg",
+      "sha256sum": "4d4bbd5390fb59888f116cdad60379e20eb41cdea2fcbda9754702de0e609b0d",
+      "id": "077b7b79-1262-45ba-a13a-cac61df3ff06"
+    }
+  ]
+}
+```
+
+### /set_meta
+This endpoint accepts a POST request containing as payload the json obtained from `/get_meta` and is useful to restore all the metadata of the files if for some reason it got deleted.
+
+If succesful the endpoint will reply with the following json:
+```json
+{
+  "ok": true
+}
+```
+
+Otherwise if some errors happened it will set the `ok` field to `false` and include all the errors generated.
+Eg:
+```json
+{
+  "ok": false,
+  "errors": [
+    "example error #1",
+    "example error #2",
+    "example error #3"
+  ]
+}
