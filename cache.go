@@ -1,4 +1,5 @@
-// +build !windows, !solaris
+//go:build (!windows && ignore) || !solaris
+// +build !windows,ignore !solaris
 
 /*
  * Adam - Adam's Data Access Manager
@@ -21,8 +22,8 @@
 package main
 
 import (
-    "errors"
-    "git.mills.io/prologic/bitcask"
+	"errors"
+	"git.mills.io/prologic/bitcask"
 )
 
 // ErrIterationDone is useful to stop the iteration in the Fold function.
@@ -33,65 +34,65 @@ type Cache string
 
 // Put stores a value in the cache.
 func (c Cache) Put(key, val []byte) error {
-    cc, err := bitcask.Open(string(c))
-    if err != nil {
-        return err
-    }
-    defer cc.Close()
-    return cc.Put(key, val)
+	cc, err := bitcask.Open(string(c))
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+	return cc.Put(key, val)
 }
 
 // Get returns the value from the cache associated with the given key.
 // If no value is associated with the given key nil is returned.
 func (c Cache) Get(key []byte) ([]byte, error) {
-    cc, err := bitcask.Open(string(c))
-    if err != nil {
-        return []byte{}, err
-    }
-    defer cc.Close()
-    
-    val, err := cc.Get(key)
-    if errors.Is(err, bitcask.ErrKeyNotFound) {
-        return nil, nil
-    }
-    return val, err
+	cc, err := bitcask.Open(string(c))
+	if err != nil {
+		return []byte{}, err
+	}
+	defer cc.Close()
+
+	val, err := cc.Get(key)
+	if errors.Is(err, bitcask.ErrKeyNotFound) {
+		return nil, nil
+	}
+	return val, err
 }
 
 // Del deletes the value in the cache that corresponds to the given key.
 func (c Cache) Del(key []byte) error {
-    cc, err := bitcask.Open(string(c))
-    if err != nil {
-        return err
-    }
-    defer cc.Close()
-    
-    err = cc.Delete(key)
-    if errors.Is(err, bitcask.ErrKeyNotFound) {
-        return nil
-    }
-    return err
+	cc, err := bitcask.Open(string(c))
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+
+	err = cc.Delete(key)
+	if errors.Is(err, bitcask.ErrKeyNotFound) {
+		return nil
+	}
+	return err
 }
 
-// Fold iterates over all the key-value pairs stored in the cache and calls the 
+// Fold iterates over all the key-value pairs stored in the cache and calls the
 // function in input passing those values as argument.
 func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
-    cc, err := bitcask.Open(string(c))
-    if err != nil {
-        return err
-    }
-    defer cc.Close()
+	cc, err := bitcask.Open(string(c))
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
 
-    err = cc.Fold(func(key []byte) error {
-        val, err := cc.Get(key)
-        if err != nil {
-            return err
-        }
+	err = cc.Fold(func(key []byte) error {
+		val, err := cc.Get(key)
+		if err != nil {
+			return err
+		}
 
-        return fn(key,val)
-    })
+		return fn(key, val)
+	})
 
-    if errors.Is(err, ErrIterationDone) {
-        return nil
-    }
-    return err
+	if errors.Is(err, ErrIterationDone) {
+		return nil
+	}
+	return err
 }

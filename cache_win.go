@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 /*
@@ -62,7 +63,7 @@ func (c Cache) Del(key []byte) error {
 	return cc.Delete(key)
 }
 
-// Fold iterates over all the key-value pairs stored in the cache and calls the 
+// Fold iterates over all the key-value pairs stored in the cache and calls the
 // function in input passing those values as argument.
 func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 	cc, err := pogreb.Open(string(c), nil)
