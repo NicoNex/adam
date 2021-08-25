@@ -1,0 +1,41 @@
+.\" Manpage for adam.
+.\" Contact nicolo.santamaria@protonmail.com for bug reports.
+.TH adam 1 "01-06-2021" "adam man page"
+
+.SH NAME
+adam \- Adam's Data Access Manager.
+
+.SH SYNOPSIS
+.B adam [OPTIONS]
+
+.SH DESCRIPTION
+Adam \- Adam's Data Access Manager.
+.P
+Adam is a concurrent and fast data access manager, it supports multiple architectures and operating systems and has no runtime dependencies. 
+.P
+Adam stores and serves multiple files organised by directories over HTTP or HTTPS also storing their UUID and checksums in a cache.
+
+.SH OPTIONS
+.B "-p"
+    The port Adam will listen to.
+
+.B "-d"
+    The directory Adam will use as root directory.
+
+.B "-c"
+    The directory Adam will use to cache the checksums and UUIDs.
+
+.B "-cert"
+    The path to the TLS certificate file.
+
+.B "-keys"
+    The path to the file containing the private keys that match with the certificate.
+
+.B "-restore"
+    The path to the json file Adam will use to restore the caches.
+
+.B "-tls"
+    If present it enables HTTPS connections, it's implicit if both the certificate and the keys are specified.
+
+.SH AUTHOR
+Nicolò Santamaria <nicolo.santamaria@protonmail.com>
