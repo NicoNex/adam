@@ -26,6 +26,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// Config contains all the configuration data.
 type Config struct {
 	Port       string `toml:"port"`
 	BaseDir    string `toml:"base_dir"`

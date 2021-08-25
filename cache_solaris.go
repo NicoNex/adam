@@ -25,10 +25,13 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+// ErrIterationDone is useful to stop the iteration in the Fold function.
 var ErrIterationDone = errors.New("iteration done")
 
+// Cache is the abstraction object to the key-value database used for caching.
 type Cache string
 
+// Put stores a value in the cache.
 func (c Cache) Put(key, val []byte) error {
 	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
@@ -38,6 +41,8 @@ func (c Cache) Put(key, val []byte) error {
 	return cc.Put(key, val, nil)
 }
 
+// Get returns the value from the cache associated with the given key.
+// If no value is associated with the given key nil is returned.
 func (c Cache) Get(key []byte) ([]byte, error) {
 	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
@@ -47,6 +52,7 @@ func (c Cache) Get(key []byte) ([]byte, error) {
 	return cc.Get(key, nil)
 }
 
+// Del deletes the value in the cache that corresponds to the given key.
 func (c Cache) Del(key []byte) error {
 	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {
@@ -56,6 +62,8 @@ func (c Cache) Del(key []byte) error {
 	return cc.Delete(key, nil)
 }
 
+// Fold iterates over all the key-value pairs stored in the cache and calls the 
+// function in input passing those values as argument.
 func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 	cc, err := leveldb.OpenFile(string(c), nil)
 	if err != nil {

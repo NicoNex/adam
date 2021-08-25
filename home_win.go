@@ -22,4 +22,5 @@ package main
 
 import "os"
 
+// Home stores the path to the home directory.
 var Home = os.Getenv("UserProfile")
