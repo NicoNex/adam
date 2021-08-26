@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -134,8 +135,8 @@ func findIDFromPath(path string) (string, error) {
 
 func put(fname string, content []byte) (File, error) {
 	var (
-		id, hash string
-		path     = filepath.Join(cfg.BaseDir, fname)
+		id   string
+		path = filepath.Join(cfg.BaseDir, fname)
 	)
 
 	// Generate UUID if fname doesn't exist.
@@ -170,6 +171,28 @@ func put(fname string, content []byte) (File, error) {
 	}
 
 	return File{ID: id, Sha256sum: hash, Path: fname}, nil
+}
+
+func putWithID(id, fpath string, content []byte) (File, error) {
+	var path = filepath.Join(cfg.BaseDir, fpath)
+
+	// Save file to disk.
+	if err := saveFile(path, content); err != nil {
+		return File{}, fmt.Errorf("put saveFile: %w", err)
+	}
+
+	// Save ID to cache.
+	if err := ccID.Put([]byte(id), []byte(fpath)); err != nil {
+		return File{}, fmt.Errorf("put ccID.Put: %w", err)
+	}
+
+	// Save sha256sum to cache.
+	hash, err := saveSha256sum(fpath, content)
+	if err != nil {
+		return File{}, fmt.Errorf("put saveSha256sum: %w", err)
+	}
+
+	return File{ID: id, Sha256sum: hash, Path: fpath}, nil
 }
 
 func del(fpath string) error {
@@ -646,6 +669,71 @@ func handleSetMeta(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(b))
 }
 
+func handlePutWithMeta(w http.ResponseWriter, r *http.Request) {
+	var files []InputFile
+
+	if r.Method != http.MethodPost {
+		fmt.Fprintln(w, errorf("invalid request, expected POST got %s", r.Method))
+		return
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&files); err != nil {
+		log.Println("handlePutWithMeta", "json.Decoder.Decode", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+
+	var (
+		wg         sync.WaitGroup
+		savedFiles FileList
+		errs       ErrList
+		ok         = true
+	)
+
+	for i, f := range files {
+		wg.Add(1)
+		go func(i int, f InputFile) {
+			defer wg.Done()
+
+			if f.ID == "" || f.Path == "" || f.Content == "" {
+				ok = false
+				err := fmt.Errorf("missing data for file #%d", i)
+				log.Println("handlePutWithMeta", err)
+				errs.Append(err)
+				return
+			}
+
+			cnt, err := base64.StdEncoding.DecodeString(f.Content)
+			if err != nil {
+				ok = false
+				log.Println("handlePutWithMeta", "base64.StdEncoding.DecodeString", err)
+				errs.Append(err)
+				return
+			}
+
+			if file, err := putWithID(f.ID, f.Path, cnt); err == nil {
+				savedFiles.Append(file)
+			} else {
+				ok = false
+				log.Println("handlePutWithMeta", "putWithID", err)
+			}
+		}(i, f)
+	}
+	wg.Wait()
+
+	b, err := json.Marshal(PutResponse{
+		Base:   Base{OK: ok},
+		Files:  savedFiles.Slice(),
+		Errors: errs.Slice(),
+	})
+	if err != nil {
+		log.Println("handlePutWithMeta", "json.Marshal", err)
+		fmt.Fprintln(w, errorf(err.Error()))
+		return
+	}
+	fmt.Fprintln(w, string(b))
+}
+
 func createIfNotExists(path string) {
 	if ok, err := exists(path); err != nil {
 		log.Fatalf("could not create dir %q, reason: %v", path, err)
@@ -724,6 +812,7 @@ func main() {
 	http.HandleFunc("/sha256sum/", handleSha256sum)
 	http.HandleFunc("/get_meta", handleGetMeta)
 	http.HandleFunc("/set_meta", handleSetMeta)
+	http.HandleFunc("/put_with_meta", handlePutWithMeta)
 
 	if cfg.EnableTLS {
 		log.Fatal(http.ListenAndServeTLS(cfg.Port, cfg.CertPath, cfg.ServerKey, nil))

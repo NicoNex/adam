@@ -44,3 +44,11 @@ type File struct {
 	Sha256sum string `json:"sha256sum,omitempty"`
 	ID        string `json:"id,omitempty"`
 }
+
+// InputFile represents the json containing a file content encoded in base64
+// and its metadata.
+type InputFile struct {
+	ID      string `json:"id"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
