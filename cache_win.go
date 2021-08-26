@@ -1,4 +1,5 @@
 //go:build windows
+// +build windows
 
 /*
  * Adam - Adam's Data Access Manager

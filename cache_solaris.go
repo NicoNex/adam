@@ -1,4 +1,5 @@
 //go:build solaris
+// +build solaris
 
 /*
  * Adam - Adam's Data Access Manager
