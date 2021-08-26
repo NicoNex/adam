@@ -1,5 +1,4 @@
-//go:build (!windows && ignore) || !solaris
-// +build !windows,ignore !solaris
+//go:build !windows && !solaris
 
 /*
  * Adam - Adam's Data Access Manager
