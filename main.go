@@ -747,10 +747,6 @@ func createIfNotExists(path string) {
 func config() Config {
 	var cfg = parseConfig(filepath.Join(Home, ".config", "adam.toml"))
 
-	if cfg.Port == "" {
-		cfg.Port = ":8080"
-	}
-
 	flag.StringVar(&cfg.Port, "p", cfg.Port, "The port Adam will listen to.")
 	flag.StringVar(&cfg.BaseDir, "d", cfg.BaseDir, "The directory Adam will use as root directory.")
 	flag.StringVar(&cfg.CacheDir, "c", cfg.CacheDir, "The directory Adam will use to cache the checksums and UUIDs.")
@@ -762,12 +758,6 @@ func config() Config {
 
 	if !strings.HasPrefix(cfg.Port, ":") {
 		cfg.Port = fmt.Sprintf(":%s", cfg.Port)
-	}
-	if cfg.CacheDir == "" {
-		cfg.CacheDir = filepath.Join(Home, ".cache", "adam")
-	}
-	if cfg.BaseDir == "" {
-		cfg.BaseDir = filepath.Join(Home, ".adam")
 	}
 	if cfg.CertPath != "" && cfg.ServerKey != "" {
 		cfg.EnableTLS = true
