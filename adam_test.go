@@ -10,6 +10,7 @@ var (
 	id        []byte
 	fname     = filepath.Join("testdir", "test.txt")
 	fname2    = filepath.Join("dirtest", "something-else", fname)
+	fnameID   = filepath.Join("dirID", "something-else", fname)
 	data      = []byte("test data")
 	sha256sum = "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
 )
@@ -30,6 +31,26 @@ func TestPut(t *testing.T) {
 	assert.Equal(t, path, []byte(fname))
 
 	h, err := ccHash.Get([]byte(fname))
+	assert.NoError(t, err)
+	assert.Equal(t, h, []byte(sha256sum))
+}
+
+func TestPutWithID(t *testing.T) {
+	id := "randomID"
+
+	f, err := putWithID(id, fnameID, data)
+	assert.NoError(t, err)
+	assert.Equal(t, f.Sha256sum, sha256sum)
+
+	ok, err := exists(filepath.Join(cfg.BaseDir, f.Path))
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	path, err := ccID.Get([]byte(f.ID))
+	assert.NoError(t, err)
+	assert.Equal(t, path, []byte(fnameID))
+
+	h, err := ccHash.Get([]byte(fnameID))
 	assert.NoError(t, err)
 	assert.Equal(t, h, []byte(sha256sum))
 }
