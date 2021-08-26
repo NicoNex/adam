@@ -256,3 +256,42 @@ Eg:
     "example error #3"
   ]
 }
+```
+
+### /put_with_meta
+This endpoint accepts a POST request containing as payload a list of json objects containing:
+- the **ID** of the file
+- the **destination path** of the file
+- the **base64** encoding of the file content
+
+Eg:
+```json
+[
+  {
+    "id": "ID #1",
+    "path": "assets/game/image.jpg",
+    "content": "Y2hlY2sgb3V0IGVjaG90cm9u"
+  },
+  {
+    "id": "ID #2",
+    "path": "assets/videos/video.mp4",
+    "content": "ZXZlbiBjaGVjayBvdXQgdGF1LCB5b3Ugd29uJ3QgcmVncmV0IGl0"
+  },
+  {
+    "id": "ID #3",
+    "path": "assets/docs/text.txt",
+    "content": "aWRrIHdoYXQgdG8gc2F5IGhlcmUuLi4="
+  },
+  {
+    "id": "ID #4",
+    "path": "assets/selfies/portrait.png",
+    "content": "c2FzIHNhcyBzYXMgbWlrZQ=="
+  }
+]
+```
+
+This endpoint is useful in case the caller wants to specify its own IDs for the files rather than letting Adam generate it. 
+In the future the amounth of metadata associated with each file might increase and thus this endpoint will be updated. 
+Whether the request will be succesful or not the response will be the same as for the */put* endpoint. 
+
+> NOTE: when using this endpoint Adam can't ensure the uniqueness of the IDs and their consistency, hence the caller needs to take care of that on its own.
