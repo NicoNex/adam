@@ -1,5 +1,5 @@
 # adam
-Adam's Data Access Manager
+Adam's a Data Access Manager
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/NicoNex/adam)](https://goreportcard.com/report/github.com/NicoNex/adam)
 
@@ -290,7 +290,7 @@ Eg:
 ]
 ```
 
-This endpoint is useful in case the caller wants to specify its own IDs for the files rather than letting Adam generate it. 
+This endpoint is useful in case the caller wants to specify its own IDs for the files rather than letting Adam generate them. 
 In the future the amounth of metadata associated with each file might increase and thus this endpoint will be updated. 
 Whether the request will be succesful or not the response will be the same as for the */put* endpoint. 
 

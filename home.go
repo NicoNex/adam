@@ -2,7 +2,7 @@
 // +build !windows
 
 /*
- * Adam - Adam's Data Access Manager
+ * Adam - Adam's a Data Access Manager
  * Copyright (C) 2021 Nicolò Santamaria
  *
  * Adam is free software: you can redistribute it and/or modify
