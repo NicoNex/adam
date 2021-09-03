@@ -96,14 +96,6 @@ func saveSha256sum(fpath string, cnt []byte) (string, error) {
 	return encHex, nil
 }
 
-func getSha256sum(fpath string) (string, error) {
-	c, err := ccHash.Get([]byte(fpath))
-	if err != nil {
-		return "", err
-	}
-	return string(c), nil
-}
-
 func moveSha256sum(src, dest string) error {
 	var s = []byte(src)
 	var d = []byte(dest)
@@ -559,7 +551,7 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 		path = strings.TrimPrefix(path, "/")
 	}
 
-	c, err := getSha256sum(path)
+	c, err := ccHash.Get([]byte(path))
 	if err != nil {
 		fmt.Fprintln(w, errorf(err.Error()))
 		return
@@ -567,7 +559,7 @@ func handleSha256sum(w http.ResponseWriter, r *http.Request) {
 
 	b, err := json.Marshal(ChecksumResponse{
 		Base:   Base{OK: true},
-		Sha256: c,
+		Sha256: string(c),
 		File:   path,
 	})
 	if err != nil {
