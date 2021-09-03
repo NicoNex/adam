@@ -133,6 +133,28 @@ func findIDFromPath(path string) (string, error) {
 	})
 }
 
+func saveData(id, fpath string, content []byte) (File, error) {
+	var path = filepath.Join(cfg.BaseDir, fpath)
+
+	// Save file to disk.
+	if err := saveFile(path, content); err != nil {
+		return File{}, fmt.Errorf("put saveFile: %w", err)
+	}
+
+	// Save ID to cache.
+	if err := ccID.Put([]byte(id), []byte(fpath)); err != nil {
+		return File{}, fmt.Errorf("put ccID.Put: %w", err)
+	}
+
+	// Save sha256sum to cache.
+	hash, err := saveSha256sum(fpath, content)
+	if err != nil {
+		return File{}, fmt.Errorf("put saveSha256sum: %w", err)
+	}
+
+	return File{ID: id, Sha256sum: hash, Path: fpath}, nil
+}
+
 func put(fname string, content []byte) (File, error) {
 	var (
 		id   string
@@ -154,45 +176,7 @@ func put(fname string, content []byte) (File, error) {
 		id = ident.String()
 	}
 
-	// Save file to disk.
-	if err := saveFile(path, content); err != nil {
-		return File{}, fmt.Errorf("put saveFile: %w", err)
-	}
-
-	// Save ID to cache.
-	if err := ccID.Put([]byte(id), []byte(fname)); err != nil {
-		return File{}, fmt.Errorf("put ccID.Put: %w", err)
-	}
-
-	// Save sha256sum to cache.
-	hash, err := saveSha256sum(fname, content)
-	if err != nil {
-		return File{}, fmt.Errorf("put saveSha256sum: %w", err)
-	}
-
-	return File{ID: id, Sha256sum: hash, Path: fname}, nil
-}
-
-func putWithID(id, fpath string, content []byte) (File, error) {
-	var path = filepath.Join(cfg.BaseDir, fpath)
-
-	// Save file to disk.
-	if err := saveFile(path, content); err != nil {
-		return File{}, fmt.Errorf("put saveFile: %w", err)
-	}
-
-	// Save ID to cache.
-	if err := ccID.Put([]byte(id), []byte(fpath)); err != nil {
-		return File{}, fmt.Errorf("put ccID.Put: %w", err)
-	}
-
-	// Save sha256sum to cache.
-	hash, err := saveSha256sum(fpath, content)
-	if err != nil {
-		return File{}, fmt.Errorf("put saveSha256sum: %w", err)
-	}
-
-	return File{ID: id, Sha256sum: hash, Path: fpath}, nil
+	return saveData(id, fname, content)
 }
 
 func del(fpath string) error {
@@ -711,7 +695,7 @@ func handlePutWithMeta(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if file, err := putWithID(f.ID, f.Path, cnt); err == nil {
+			if file, err := saveData(f.ID, f.Path, cnt); err == nil {
 				savedFiles.Append(file)
 			} else {
 				ok = false
