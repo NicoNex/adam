@@ -728,7 +728,7 @@ func config() Config {
 	flag.StringVar(&cfg.CacheDir, "c", cfg.CacheDir, "The directory Adam will use to cache the checksums and UUIDs.")
 	flag.StringVar(&cfg.backupFile, "restore", cfg.backupFile, "The path to the json file Adam will use to restore the caches.")
 	flag.StringVar(&cfg.CertPath, "cert", cfg.CertPath, "The path to the certificate.")
-	flag.StringVar(&cfg.ServerKey, "keys", cfg.ServerKey, "The path to the file containing the private keys that match with the certificate.")
+	flag.StringVar(&cfg.ServerKey, "key", cfg.ServerKey, "The path to the file containing the private keys that match with the certificate.")
 	flag.BoolVar(&cfg.EnableTLS, "tls", cfg.EnableTLS, "Enable HTTPS connections.")
 	flag.Parse()
 
