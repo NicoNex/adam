@@ -24,6 +24,7 @@ package main
 import (
 	"errors"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 // ErrIterationDone is useful to stop the iteration in the Fold function.
@@ -82,4 +83,13 @@ func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 	iter.Release()
 
 	return iter.Error()
+}
+
+func (c Cache) Merge() error {
+	cc, err := leveldb.OpenFile(string(c), nil)
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+	return cc.CompactRange(util.Range{nil, nil})
 }

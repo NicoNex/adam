@@ -96,3 +96,12 @@ func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 	}
 	return err
 }
+
+func (c Cache) Merge() error {
+	cc, err := bitcask.Open(string(c))
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+	return cc.Merge()
+}

@@ -87,3 +87,14 @@ func (c Cache) Fold(fn func(key, val []byte) error) (err error) {
 	}
 	return
 }
+
+func (c Cache) Merge() error {
+	cc, err := pogreb.Open(string(c), nil)
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+
+	_, err = cc.Compact()
+	return err
+}

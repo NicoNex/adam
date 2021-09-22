@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -745,6 +746,17 @@ func config() Config {
 	return cfg
 }
 
+// tick executes fn every day at midnight and logs its error if any.
+func tick(c <-chan time.Time, fn func() error) {
+	for t := range c {
+		if t.Hour() == 0 && t.Minute() == 0 {
+			if err := fn(); err != nil {
+				log.Println(err)
+			}
+		}
+	}
+}
+
 func main() {
 	cfg = config()
 
@@ -763,7 +775,10 @@ func main() {
 	go createIfNotExists(cfg.CacheDir)
 
 	ccHash = Cache(filepath.Join(cfg.CacheDir, "sha256sum"))
+	go tick(time.Tick(time.Minute), ccHash.Merge)
+
 	ccID = Cache(filepath.Join(cfg.CacheDir, "ids"))
+	go tick(time.Tick(time.Minute), ccID.Merge)
 
 	log.Printf("Adam is running on port %s...\n", cfg.Port)
 
